@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Live Tape Calculator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="A simple calculator that shows your calculation and its result live as you type, with saved history and themes.">
+<meta name="theme-color" content="#f6f8fa">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Calculator">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+<script src="app.js"></script>
+</head>
+<body>
+<main class="calc">
+  <h1 class="sr-only">Live Tape Calculator</h1>
+
+  <div class="app-main" id="appMain">
+    <section class="screen" aria-label="Display">
+      <div class="screen-head">
+        <span aria-hidden="true">Last</span>
+        <div class="head-actions">
+          <button type="button" class="head-btn" id="openHistory" aria-haspopup="dialog">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>
+            History <span class="count" id="historyCount" aria-hidden="true">0</span>
+          </button>
+          <button type="button" class="head-btn" id="openSettings" aria-haspopup="dialog">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.8 1.8-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-1 .8-1.8 1.8-1.8H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8z"/><circle cx="7.5" cy="11.5" r="1.2"/><circle cx="10.5" cy="7.5" r="1.2"/><circle cx="15" cy="8" r="1.2"/></svg>
+            Theme
+          </button>
+        </div>
+      </div>
+      <div class="recent" id="recent"></div>
+      <div class="expr" id="expr" aria-hidden="true"></div>
+      <div class="result" id="result" aria-hidden="true"></div>
+      <p class="sr-only" id="srStatus" role="status" aria-live="polite" aria-atomic="true"></p>
+    </section>
+
+    <div class="keys" id="keys" role="group" aria-label="Keypad">
+      <button type="button" class="fn clear" data-k="C" aria-label="All clear">AC</button>
+      <button type="button" class="fn" data-k="back" aria-label="Backspace">⌫</button>
+      <button type="button" class="fn" data-k="(" aria-label="Open bracket">(</button>
+      <button type="button" class="fn" data-k=")" aria-label="Close bracket">)</button>
+
+      <button type="button" data-k="7">7</button>
+      <button type="button" data-k="8">8</button>
+      <button type="button" data-k="9">9</button>
+      <button type="button" class="op" data-k="÷" aria-label="Divide">÷</button>
+
+      <button type="button" data-k="4">4</button>
+      <button type="button" data-k="5">5</button>
+      <button type="button" data-k="6">6</button>
+      <button type="button" class="op" data-k="×" aria-label="Multiply">×</button>
+
+      <button type="button" data-k="1">1</button>
+      <button type="button" data-k="2">2</button>
+      <button type="button" data-k="3">3</button>
+      <button type="button" class="op" data-k="−" aria-label="Subtract">−</button>
+
+      <button type="button" data-k="0">0</button>
+      <button type="button" data-k="." aria-label="Decimal point">.</button>
+      <button type="button" class="fn" data-k="%" aria-label="Percent">%</button>
+      <button type="button" class="op" data-k="+" aria-label="Add">+</button>
+
+      <button type="button" class="fn" data-k="neg" aria-label="Toggle positive or negative">±</button>
+      <button type="button" class="eq" data-k="=" aria-label="Equals">=</button>
+    </div>
+
+    <p class="hint" id="hint">Keyboard works too: digits, + − * /, ( ), %, Enter, Backspace, Esc, H for history</p>
+  </div>
+
+  <!-- History -->
+  <div class="modal" id="historyModal" role="dialog" aria-modal="true" aria-labelledby="historyTitle" aria-describedby="historyDesc" hidden>
+    <div class="modal-panel">
+      <div class="modal-head">
+        <h2 id="historyTitle">History</h2>
+        <p id="historyDesc">Your 20 most recent calculations, newest first. Choose one to add its result to your calculation.</p>
+      </div>
+      <ol class="h-list" id="historyList"></ol>
+      <div class="h-empty" id="historyEmpty" hidden>No calculations yet. Press = to save one here.</div>
+      <div class="modal-foot">
+        <button type="button" class="text-btn" id="clearHistory">Clear history</button>
+        <button type="button" class="close-btn" id="closeHistory" data-close aria-label="Close history">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Theme & settings -->
+  <div class="modal" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" hidden>
+    <div class="modal-panel">
+      <div class="modal-head">
+        <h2 id="settingsTitle">Theme</h2>
+        <p>Changes apply right away and save on this device.</p>
+      </div>
+      <div class="modal-body">
+        <fieldset class="field">
+          <legend>Mode</legend>
+          <div class="segmented">
+            <input type="radio" name="mode" id="modeSystem" value="system"><label for="modeSystem">System</label>
+            <input type="radio" name="mode" id="modeLight" value="light"><label for="modeLight">Light</label>
+            <input type="radio" name="mode" id="modeDark" value="dark"><label for="modeDark">Dark</label>
+          </div>
+          <p class="field-note" id="modeNote"></p>
+        </fieldset>
+
+        <fieldset class="field">
+          <legend>Accent color</legend>
+          <div class="swatches" id="accentSwatches"></div>
+        </fieldset>
+
+        <div class="field" role="group" aria-labelledby="colorsTitle">
+          <h3 class="field-title" id="colorsTitle">Colors</h3>
+          <div class="color-row">
+            <label for="bgColor">Background</label>
+            <input type="color" id="bgColor" aria-describedby="bgHex bgState">
+            <span class="hex" id="bgHex"></span>
+            <span class="state" id="bgState"></span>
+            <button type="button" class="text-btn accent" id="bgReset">Use default</button>
+          </div>
+          <div class="color-row">
+            <label for="fgColor">Text</label>
+            <input type="color" id="fgColor" aria-describedby="fgHex fgState">
+            <span class="hex" id="fgHex"></span>
+            <span class="state" id="fgState"></span>
+            <button type="button" class="text-btn accent" id="fgReset">Use default</button>
+          </div>
+        </div>
+
+        <div class="field" role="group" aria-labelledby="checksTitle">
+          <h3 class="field-title" id="checksTitle">Contrast check (WCAG AA)</h3>
+          <ul class="checks" id="checks"></ul>
+          <p class="field-note">Text needs at least 4.5:1. The large equals sign needs 3:1.</p>
+          <div class="warn" id="contrastWarn" role="alert" hidden>
+            <span>Text is hard to read with these colors.</span>
+            <button type="button" class="btn" id="fixContrast">Fix text color</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="check-row" for="shortcuts"><input type="checkbox" id="shortcuts"> Keyboard shortcuts</label>
+          <p class="field-note">Single keys such as digits, operators and H for history. Turn them off if they get in the way of a screen reader or other assistive tool.</p>
+        </div>
+
+        <div class="field" id="installField" hidden>
+          <button type="button" class="btn primary" id="installBtn">Install app</button>
+          <p class="field-note">Adds the calculator to your home screen or desktop. It works offline.</p>
+        </div>
+
+        <div class="field">
+          <button type="button" class="btn danger-outline" id="resetBtn">Restore default settings</button>
+          <div class="confirm" id="resetConfirm" hidden>
+            <p>Reset mode, accent, colors and shortcuts to the defaults?</p>
+            <label class="check-row" for="resetHistory"><input type="checkbox" id="resetHistory"> Also clear my history</label>
+            <button type="button" class="btn danger" id="resetYes">Restore defaults</button>
+            <button type="button" class="btn" id="resetNo">Cancel</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <span class="saved-note" id="savedNote" role="status" aria-live="polite"></span>
+        <button type="button" class="close-btn" data-close aria-label="Close theme settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</main>
+</body>
+</html>
