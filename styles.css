@@ -98,6 +98,7 @@ body {
 }
 .screen-head {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
@@ -106,7 +107,7 @@ body {
   text-transform: uppercase;
   color: var(--muted);
 }
-.head-actions { display: flex; gap: 4px; }
+.head-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; margin-left: auto; }
 .head-btn {
   display: inline-flex;
   align-items: center;
@@ -242,7 +243,7 @@ body {
 .hint[hidden] { display: none; }
 
 /* shared focus ring: 2px accent with a gap, 3:1+ against every surface */
-button:focus-visible, input:focus-visible + label, input[type="color"]:focus-visible, input[type="checkbox"]:focus-visible {
+button:focus-visible, input[type="checkbox"]:focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
@@ -352,73 +353,6 @@ button:focus-visible, input:focus-visible + label, input[type="color"]:focus-vis
 .field legend + * { clear: both; }
 .field-note { margin: 6px 0 0; font-size: .8rem; color: var(--muted); line-height: 1.4; }
 
-.segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: var(--key-fn); padding: 4px; border-radius: 12px; }
-.segmented input, .swatches input { position: absolute; opacity: 0; pointer-events: none; }
-.segmented label {
-  display: grid;
-  place-items: center;
-  min-height: 40px;
-  border-radius: 9px;
-  font-weight: 600;
-  font-size: .9rem;
-  cursor: pointer;
-  color: var(--fg);
-}
-.segmented input:checked + label { background: var(--key); box-shadow: 0 0 0 1px var(--line); color: var(--accent); }
-
-.swatches { display: flex; flex-wrap: wrap; gap: 8px; }
-.swatches label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 6px 12px 6px 6px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--key);
-  font-size: .85rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-.swatches .dot { width: 24px; height: 24px; border-radius: 50%; background: var(--sw); flex: none; }
-.swatches input:checked + label { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
-.swatches input:checked + label .dot::after { content: "✓"; display: grid; place-items: center; height: 100%; color: var(--sw-fg); font-size: .8rem; font-weight: 800; }
-
-.color-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 48px; }
-.color-row label { font-weight: 600; font-size: .9rem; min-width: 6.5em; }
-.color-row input[type="color"] {
-  width: 48px;
-  height: 36px;
-  padding: 2px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--key);
-  cursor: pointer;
-}
-.color-row .hex { font-family: var(--font-num); font-size: .85rem; color: var(--muted); min-width: 5.5em; }
-.color-row .state { font-size: .75rem; color: var(--muted); }
-
-.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.checks li { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: .85rem; }
-.checks .ratio { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
-.badge { font-size: .7rem; font-weight: 700; letter-spacing: .04em; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
-.badge.pass { color: var(--accent); }
-.badge.fail { color: var(--danger); }
-.warn {
-  margin-top: 10px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--danger);
-  color: var(--fg);
-  font-size: .85rem;
-  line-height: 1.4;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.warn[hidden], .confirm[hidden], .field[hidden] { display: none; }
-
 .check-row { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: .9rem; min-height: 44px; cursor: pointer; }
 .check-row input { width: 20px; height: 20px; accent-color: var(--accent); margin: 0; }
 
@@ -448,6 +382,8 @@ button:focus-visible, input:focus-visible + label, input[type="color"]:focus-vis
 }
 @media (max-width: 360px) {
   .calc { padding: 12px; }
+  .screen { padding-inline: 10px; }
+  .head-btn { padding: 4px 6px; letter-spacing: .04em; }
   .keys { gap: 8px; }
   .result { font-size: 2.1rem; }
 }
@@ -472,6 +408,6 @@ button:focus-visible, input:focus-visible + label, input[type="color"]:focus-vis
   .keys button { transition: none; }
 }
 @media (forced-colors: active) {
-  .keys button, .btn, .close-btn, .swatches label { border: 1px solid ButtonText; }
+  .keys button, .btn, .close-btn { border: 1px solid ButtonText; }
   .caret { background: CanvasText; }
 }

@@ -1,142 +1,56 @@
 (() => {
   "use strict";
+  const { storage, theme: themeLib } = window.EasyAbacus;   // shared/storage.js, shared/theme.js
 
-  // ---------- storage (every access can throw: private mode, blocked site data) ----------
-  const KEYS = { history: "liveTapeCalc.history.v1", settings: "liveTapeCalc.settings.v1" };
-  const store = {
-    get(k) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } },
-    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } },
-  };
+  // ---------- storage: easyAbacus:calc:* ----------
+  const store = storage.createStore("calc");
+  // Move data saved by the first version of this app.
+  storage.migrate("liveTapeCalc.settings.v1", (old) => {
+    if (old.mode) storage.shared.set("theme", { mode: old.mode });
+    store.set("theme", { accent: old.accent, custom: old.custom });
+    if (typeof old.shortcuts === "boolean") store.set("settings", { shortcuts: old.shortcuts });
+  });
+  storage.migrate("liveTapeCalc.history.v1", (old) => store.set("history", old));
 
-  // ---------- color helpers ----------
-  const HEX = /^#[0-9a-f]{6}$/i;
-  const toRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
-  const toHex = (rgb) => "#" + rgb.map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, "0")).join("");
-  const mix = (a, b, t) => { const x = toRgb(a), y = toRgb(b); return toHex(x.map((v, i) => v + (y[i] - v) * t)); };
-  const lum = (h) => {
-    const [r, g, b] = toRgb(h).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  };
-  const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
-  const minContrast = (c, bgs) => Math.min(...bgs.map((b) => contrast(c, b)));
-  const pickOn = (bg) => (contrast("#ffffff", bg) >= contrast("#0b1620", bg) ? "#ffffff" : "#0b1620");
-
-  // Nudge a color toward black or white until it reaches `min` contrast on every background.
-  function ensureContrast(color, bgs, min) {
-    if (minContrast(color, bgs) >= min) return color;
-    const avgLum = bgs.reduce((s, b) => s + lum(b), 0) / bgs.length;
-    const order = avgLum > 0.25 ? ["#000000", "#ffffff"] : ["#ffffff", "#000000"];
-    for (let t = 0.05; t <= 1.0001; t += 0.05) {
-      for (const target of order) {
-        const c = mix(color, target, t);
-        if (minContrast(c, bgs) >= min) return c;
-      }
-    }
-    return minContrast("#000000", bgs) > minContrast("#ffffff", bgs) ? "#000000" : "#ffffff";
-  }
-
-  // ---------- theme ----------
-  const BASE = {
-    light: {
-      bg: "#e6ebf0", device: "#f6f8fa", screen: "#eef2f5", key: "#ffffff", keyFn: "#dde4eb",
-      fg: "#16212c", muted: "#536170", line: "#b7c3cf", danger: "#a83a27",
-      shadow: "0 1px 0 rgba(22, 33, 44, .08), 0 18px 40px -18px rgba(22, 33, 44, .28)",
-    },
-    dark: {
-      bg: "#0e1318", device: "#161d24", screen: "#11171d", key: "#212a33", keyFn: "#2a3540",
-      fg: "#e6edf3", muted: "#9aa8b6", line: "#435160", danger: "#f19a87",
-      shadow: "0 1px 0 rgba(0, 0, 0, .4), 0 18px 40px -18px rgba(0, 0, 0, .7)",
-    },
-  };
-  // Every preset passes 4.5:1 on the display, the keys and its own tint in both modes.
-  const ACCENTS = {
-    blue:   { name: "Blue",   light: { accent: "#1d5c8a", soft: "#d6e5f1" }, dark: { accent: "#74b6e6", soft: "#1c3446" } },
-    teal:   { name: "Teal",   light: { accent: "#0f6b62", soft: "#d3ebe7" }, dark: { accent: "#5cc4b6", soft: "#17352f" } },
-    violet: { name: "Violet", light: { accent: "#5b45a8", soft: "#e3defa" }, dark: { accent: "#a99af0", soft: "#2a2547" } },
-    rose:   { name: "Rose",   light: { accent: "#a8325a", soft: "#f6dbe4" }, dark: { accent: "#f08fb0", soft: "#42202d" } },
-    amber:  { name: "Amber",  light: { accent: "#8a5300", soft: "#f6e6c8" }, dark: { accent: "#e8b25a", soft: "#3b2c12" } },
-  };
-  const DEFAULT_SETTINGS = { mode: "system", accent: "blue", custom: { light: {}, dark: {} }, shortcuts: true };
-  const clone = (o) => JSON.parse(JSON.stringify(o));
-
+  const DEFAULT_SETTINGS = { shortcuts: true };
   function loadSettings() {
-    const s = store.get(KEYS.settings) || {};
-    const out = clone(DEFAULT_SETTINGS);
-    if (["system", "light", "dark"].includes(s.mode)) out.mode = s.mode;
-    if (ACCENTS[s.accent]) out.accent = s.accent;
-    if (typeof s.shortcuts === "boolean") out.shortcuts = s.shortcuts;
-    for (const m of ["light", "dark"]) {
-      const c = (s.custom && s.custom[m]) || {};
-      if (HEX.test(c.bg || "")) out.custom[m].bg = c.bg.toLowerCase();
-      if (HEX.test(c.fg || "")) out.custom[m].fg = c.fg.toLowerCase();
-    }
-    return out;
+    const s = store.get("settings", {});
+    return { shortcuts: typeof s.shortcuts === "boolean" ? s.shortcuts : DEFAULT_SETTINGS.shortcuts };
   }
-
   let settings = loadSettings();
-  const darkQuery = window.matchMedia ? matchMedia("(prefers-color-scheme: dark)") : { matches: false };
-  const effectiveMode = () => (settings.mode === "system" ? (darkQuery.matches ? "dark" : "light") : settings.mode);
 
-  function buildPalette(mode) {
-    const base = BASE[mode];
-    const acc = ACCENTS[settings.accent][mode];
-    const c = settings.custom[mode];
-    const p = { ...base, accent: acc.accent, accentSoft: acc.soft, fgAuto: false };
-
-    if (c.bg) {
-      const lightBg = lum(c.bg) > 0.18;
-      p.device = c.bg;
-      p.bg = mix(c.bg, "#000000", lightBg ? 0.08 : 0.35);
-      p.screen = mix(c.bg, "#000000", lightBg ? 0.04 : 0.22);
-      p.key = lightBg ? mix(c.bg, "#ffffff", 0.7) : mix(c.bg, "#ffffff", 0.08);
-      p.keyFn = lightBg ? mix(c.bg, "#000000", 0.08) : mix(c.bg, "#ffffff", 0.15);
-      p.line = mix(c.bg, lightBg ? "#000000" : "#ffffff", 0.24);
-      p.accentSoft = mix(c.bg, acc.accent, 0.16);
-    }
-    const textBgs = [p.key, p.keyFn, p.screen, p.device];
-    if (c.fg) p.fg = c.fg;
-    else if (c.bg && minContrast(p.fg, textBgs) < 4.5) { p.fg = ensureContrast(p.fg, textBgs, 7); p.fgAuto = true; }
-
-    if (c.bg || c.fg) {
-      // secondary text: as soft as possible while still 4.5:1
-      p.muted = p.fg;
-      for (let t = 0.5; t > 0; t -= 0.05) {
-        const m = mix(p.fg, p.screen, t);
-        if (minContrast(m, [p.screen, p.device]) >= 4.5) { p.muted = m; break; }
-      }
-    }
-    p.accent = ensureContrast(p.accent, [p.screen, p.key, p.accentSoft, p.device], 4.5);
-    p.accentFg = pickOn(p.accent);
-    p.danger = ensureContrast(p.danger, [p.screen, p.key, p.keyFn, p.device], 4.5);
-    p.dangerFg = pickOn(p.danger);
-    return p;
-  }
-
-  const root = document.documentElement;
-  if (!root.lang) root.lang = "en";
-  let palette;
-
-  function applyTheme() {
-    const mode = effectiveMode();
-    palette = buildPalette(mode);
-    root.setAttribute("data-theme", mode);
-    const vars = {
-      bg: palette.bg, device: palette.device, screen: palette.screen, key: palette.key, "key-fn": palette.keyFn,
-      fg: palette.fg, muted: palette.muted, line: palette.line, accent: palette.accent,
-      "accent-soft": palette.accentSoft, "accent-fg": palette.accentFg, danger: palette.danger,
-      "danger-fg": palette.dangerFg, shadow: palette.shadow,
-    };
-    for (const [k, v] of Object.entries(vars)) root.style.setProperty("--" + k, v);
-    root.style.colorScheme = mode;
-    let meta = document.querySelector('meta[name="theme-color"]');
-    if (!meta && document.head) {
-      meta = document.createElement("meta");
-      meta.name = "theme-color";
-      document.head.appendChild(meta);
-    }
-    if (meta) meta.content = palette.device;
-  }
-  applyTheme();   // runs in <head>, before first paint
+  // ---------- theme (applied in <head>, before first paint) ----------
+  if (!document.documentElement.lang) document.documentElement.lang = "en";
+  const theme = themeLib.init({
+    app: "calc",
+    base: {
+      light: {
+        bg: "#e6ebf0", surface: "#f6f8fa", sunk: "#eef2f5", raised: "#ffffff", raisedAlt: "#dde4eb",
+        fg: "#16212c", muted: "#536170", line: "#b7c3cf", danger: "#a83a27",
+        shadow: "0 1px 0 rgba(22, 33, 44, .08), 0 18px 40px -18px rgba(22, 33, 44, .28)",
+      },
+      dark: {
+        bg: "#0e1318", surface: "#161d24", sunk: "#11171d", raised: "#212a33", raisedAlt: "#2a3540",
+        fg: "#e6edf3", muted: "#9aa8b6", line: "#435160", danger: "#f19a87",
+        shadow: "0 1px 0 rgba(0, 0, 0, .4), 0 18px 40px -18px rgba(0, 0, 0, .7)",
+      },
+    },
+    // Every preset passes 4.5:1 on the display, the keys and its own tint in both modes.
+    accents: {
+      blue:   { name: "Blue",   light: { accent: "#1d5c8a", soft: "#d6e5f1" }, dark: { accent: "#74b6e6", soft: "#1c3446" } },
+      teal:   { name: "Teal",   light: { accent: "#0f6b62", soft: "#d3ebe7" }, dark: { accent: "#5cc4b6", soft: "#17352f" } },
+      violet: { name: "Violet", light: { accent: "#5b45a8", soft: "#e3defa" }, dark: { accent: "#a99af0", soft: "#2a2547" } },
+      rose:   { name: "Rose",   light: { accent: "#a8325a", soft: "#f6dbe4" }, dark: { accent: "#f08fb0", soft: "#42202d" } },
+      amber:  { name: "Amber",  light: { accent: "#8a5300", soft: "#f6e6c8" }, dark: { accent: "#e8b25a", soft: "#3b2c12" } },
+    },
+    defaultAccent: "blue",
+    vars: (p) => ({
+      "--bg": p.bg, "--device": p.surface, "--screen": p.sunk, "--key": p.raised, "--key-fn": p.raisedAlt,
+      "--fg": p.fg, "--muted": p.muted, "--line": p.line, "--accent": p.accentText, "--accent-soft": p.accentSoft,
+      "--accent-fg": p.onAccentText, "--danger": p.danger, "--danger-fg": p.onDanger, "--shadow": p.shadow,
+    }),
+    themeColor: (p) => p.surface,
+  });
 
   // ---------- everything below needs the DOM ----------
   function init() {
@@ -157,16 +71,19 @@
     const openSettingsBtn = $("openSettings");
 
     function loadHistory() {
-      const h = store.get(KEYS.history);
+      const h = store.get("history");
       if (!Array.isArray(h)) return [];
       return h.filter((x) => x && typeof x.expr === "string" && typeof x.value === "number" && isFinite(x.value))
         .slice(-HISTORY_LIMIT);
     }
     let history = loadHistory();   // oldest first
-    let expr = history.length ? "" : "12+7×3";   // a worked example on the very first visit
+    // what was on the display last time, or a worked example on the very first visit
+    let expr = typeof store.get("current") === "string" ? store.get("current") : (history.length ? "" : "12+7×3");
     let justEvaluated = false;
     let errorMsg = null;
-    const saveHistory = () => store.set(KEYS.history, history);
+    const saveHistory = () => store.set("history", history);
+    let currentTimer;
+    const saveCurrent = () => { clearTimeout(currentTimer); currentTimer = setTimeout(() => store.set("current", justEvaluated || errorMsg ? "" : expr), 300); };
 
     // ---------- evaluation (recursive descent, no eval) ----------
     function tokenize(s) {
@@ -422,6 +339,7 @@
       }
       render();
       announceState();
+      saveCurrent();
     }
 
     function toggleSign() {
@@ -468,6 +386,7 @@
       }
       render();
       announceState();
+      saveCurrent();
     }
 
     // ---------- modals ----------
@@ -538,92 +457,21 @@
     });
 
     // ---------- settings modal ----------
-    const swatchesEl = $("accentSwatches");
-    swatchesEl.innerHTML = Object.entries(ACCENTS).map(([key, a]) =>
-      `<input type="radio" name="accent" id="accent-${key}" value="${key}">
-       <label for="accent-${key}"><span class="dot" aria-hidden="true"></span>${a.name}</label>`).join("");
-
-    let savedTimer;
-    function saveSettings() {
-      const ok = store.set(KEYS.settings, settings);
-      clearTimeout(savedTimer);
-      savedTimer = setTimeout(() => {
-        $("savedNote").textContent = ok ? "Saved on this device" : "Can't save: this browser blocks storage";
-      }, 500);
-    }
-
-    function ratioRow(label, ratio, min) {
-      const pass = ratio >= min;
-      return `<li><span>${label}</span><span><span class="ratio">${ratio.toFixed(1)}:1</span>
-        <span class="badge ${pass ? "pass" : "fail"}">${pass ? "Pass" : "Fail"}</span></span></li>`;
-    }
+    theme.render($("themePanel"));   // mode, accent, colors and contrast checks (shared/theme.js)
 
     function renderSettings() {
-      const mode = effectiveMode();
-      const p = palette;
-      const c = settings.custom[mode];
-      document.querySelectorAll('input[name="mode"]').forEach((r) => { r.checked = r.value === settings.mode; });
-      document.querySelectorAll('input[name="accent"]').forEach((r) => {
-        r.checked = r.value === settings.accent;
-        const a = ACCENTS[r.value][mode].accent;
-        r.nextElementSibling.style.setProperty("--sw", a);
-        r.nextElementSibling.style.setProperty("--sw-fg", pickOn(a));
-      });
-      $("colorsTitle").textContent = `Colors for ${mode} mode`;
-      $("modeNote").textContent = settings.mode === "system"
-        ? `Following your device, which is in ${mode} mode now. Light and dark mode keep separate colors.`
-        : "Light and dark mode keep separate colors.";
-
-      $("bgColor").value = p.device;
-      $("bgHex").textContent = p.device;
-      $("bgState").textContent = c.bg ? "Custom" : "Default";
-      $("bgReset").disabled = !c.bg;
-      $("fgColor").value = p.fg;
-      $("fgHex").textContent = p.fg;
-      $("fgState").textContent = c.fg ? "Custom" : p.fgAuto ? "Adjusted for contrast" : "Default";
-      $("fgReset").disabled = !c.fg;
-
-      const textKeys = Math.min(contrast(p.fg, p.key), contrast(p.fg, p.keyFn));
-      const textScreen = Math.min(contrast(p.fg, p.screen), contrast(p.fg, p.device));
-      $("checks").innerHTML =
-        ratioRow("Text on keys", textKeys, 4.5) +
-        ratioRow("Text on display", textScreen, 4.5) +
-        ratioRow("Secondary text", Math.min(contrast(p.muted, p.screen), contrast(p.muted, p.device)), 4.5) +
-        ratioRow("Accent text", Math.min(contrast(p.accent, p.screen), contrast(p.accent, p.accentSoft)), 4.5) +
-        ratioRow("Equals key", contrast(p.accentFg, p.accent), 3);
-      $("contrastWarn").hidden = textKeys >= 4.5 && textScreen >= 4.5;
-
       $("shortcuts").checked = settings.shortcuts;
       $("hint").textContent = settings.shortcuts
         ? "Keyboard works too: digits, + − * /, ( ), %, Enter, Backspace, Esc, H for history"
         : "Keyboard shortcuts are off. Turn them on in Theme.";
     }
+    function saveSettings() { store.set("settings", settings); }
+    store.onChange("settings", () => { settings = loadSettings(); renderSettings(); });
 
-    function themeChanged() {
-      applyTheme();
-      renderSettings();
+    $("shortcuts").addEventListener("change", (e) => {
+      settings.shortcuts = e.target.checked;
       saveSettings();
-    }
-
-    settingsModal.addEventListener("change", (e) => {
-      const t = e.target;
-      if (t.name === "mode") settings.mode = t.value;
-      else if (t.name === "accent") settings.accent = t.value;
-      else if (t.id === "shortcuts") settings.shortcuts = t.checked;
-      else return;
-      themeChanged();
-    });
-    // color inputs update live while dragging
-    $("bgColor").addEventListener("input", (e) => { settings.custom[effectiveMode()].bg = e.target.value.toLowerCase(); themeChanged(); });
-    $("fgColor").addEventListener("input", (e) => { settings.custom[effectiveMode()].fg = e.target.value.toLowerCase(); themeChanged(); });
-    $("bgReset").addEventListener("click", () => { delete settings.custom[effectiveMode()].bg; themeChanged(); $("bgColor").focus(); });
-    $("fgReset").addEventListener("click", () => { delete settings.custom[effectiveMode()].fg; themeChanged(); $("fgColor").focus(); });
-    $("fixContrast").addEventListener("click", () => {
-      const p = palette;
-      settings.custom[effectiveMode()].fg = ensureContrast(p.fg, [p.key, p.keyFn, p.screen, p.device], 4.5);
-      themeChanged();
-      announce("Text color adjusted to meet 4.5 to 1 contrast", 0);
-      $("fgColor").focus();
+      renderSettings();
     });
 
     $("resetBtn").addEventListener("click", () => {
@@ -637,7 +485,9 @@
       $("resetBtn").focus();
     });
     $("resetYes").addEventListener("click", () => {
-      settings = clone(DEFAULT_SETTINGS);
+      settings = { ...DEFAULT_SETTINGS };
+      saveSettings();
+      theme.reset();
       if ($("resetHistory").checked) {
         history = [];
         justEvaluated = false;
@@ -647,21 +497,14 @@
       $("resetHistory").checked = false;
       $("resetConfirm").hidden = true;
       $("resetBtn").hidden = false;
-      themeChanged();
+      renderSettings();
       $("resetBtn").focus();
       announce("Default settings restored", 0);
     });
 
     openSettingsBtn.addEventListener("click", () => {
       renderSettings();
-      $("savedNote").textContent = "";
       openModal(settingsModal, openSettingsBtn);
-    });
-
-    darkQuery.addEventListener?.("change", () => {
-      if (settings.mode !== "system") return;
-      applyTheme();
-      renderSettings();
     });
 
     // ---------- install (PWA) ----------
@@ -683,6 +526,7 @@
     if ("serviceWorker" in navigator && (location.protocol === "https:" || /^(localhost|127\.0\.0\.1)$/.test(location.hostname))) {
       navigator.serviceWorker.register("sw.js").catch(() => { /* not available here; the app still works online */ });
     }
+    window.addEventListener("pagehide", () => { clearTimeout(currentTimer); store.set("current", justEvaluated || errorMsg ? "" : expr); });
 
     // ---------- keyboard ----------
     $("keys").addEventListener("click", (e) => {

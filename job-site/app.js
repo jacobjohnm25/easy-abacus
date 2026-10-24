@@ -424,16 +424,28 @@
   ];
 
   // ---------- state & storage ----------
-  const KEY = "jobSiteCalc.v1";
-  const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
-  const saved = load();
-  const state = {
-    system: saved.system === "metric" || saved.system === "imperial" ? saved.system
-      : (navigator.language === "en-US" ? "imperial" : "metric"),
-    tool: TOOLS.some((t) => t.id === saved.tool) ? saved.tool : "concrete",   // checked before TOOL_BY_ID exists
-    values: saved.values && typeof saved.values === "object" ? saved.values : {},
+  // Saved through shared/storage.js as easyAbacus:job-site:settings, :inputs and :last
+  const { storage } = window.EasyAbacus;
+  const store = storage.createStore("job-site");
+  storage.migrate("jobSiteCalc.v1", (old) => {   // data saved by the first version
+    store.set("settings", { system: old.system, tool: old.tool });
+    if (old.values) store.set("inputs", old.values);
+  });
+
+  const defaultSystem = () => (navigator.language === "en-US" ? "imperial" : "metric");
+  function loadSettings() {
+    const s = store.get("settings", {});
+    return {
+      system: s.system === "metric" || s.system === "imperial" ? s.system : defaultSystem(),
+      tool: TOOLS.some((t) => t.id === s.tool) ? s.tool : "concrete",
+    };
+  }
+  function loadInputs() { const v = store.get("inputs", {}); return v && typeof v === "object" ? v : {}; }
+  const state = { ...loadSettings(), values: loadInputs() };
+  const persist = () => {
+    store.set("settings", { system: state.system, tool: state.tool });
+    store.set("inputs", state.values);
   };
-  const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* storage blocked: still works */ } };
 
   const TOOL_BY_ID = Object.fromEntries(TOOLS.map((t) => [t.id, t]));
   const tool = () => TOOL_BY_ID[state.tool];
@@ -519,6 +531,40 @@
   }
 
   let lastSummary = "";
+
+  // ---------- last calculation ----------
+  // Saved once the numbers settle, so every keystroke doesn't count as a calculation.
+  let last = store.get("last");
+  let lastTimer;
+  function recordLast(t, r) {
+    clearTimeout(lastTimer);
+    lastTimer = setTimeout(() => {
+      const entry = { tool: t.id, system: state.system, label: r.label, value: r.value, unit: r.unit || "", at: Date.now() };
+      if (last && last.tool === entry.tool && last.value === entry.value && last.unit === entry.unit && last.system === entry.system) return;
+      last = entry;
+      store.set("last", last);
+      renderLast();
+    }, 1500);
+  }
+  function ago(ms) {
+    const m = Math.round((Date.now() - ms) / 60000);
+    if (m < 1) return "just now";
+    if (m < 60) return `${m} min ago`;
+    const h = Math.round(m / 60);
+    if (h < 24) return `${h} h ago`;
+    return new Date(ms).toLocaleDateString();
+  }
+  function renderLast() {
+    const bar = $("lastBar");
+    if (!last || !TOOL_BY_ID[last.tool]) { bar.hidden = true; return; }
+    const t = TOOL_BY_ID[last.tool];
+    bar.hidden = false;
+    $("lastBtn").innerHTML = `<span class="lb-tool">${esc(t.name)}</span>
+      <span class="lb-value">${esc(last.value)}${last.unit ? " " + esc(last.unit) : ""}</span>
+      <span class="lb-time">${esc(ago(last.at))}</span>`;
+    $("lastBtn").setAttribute("aria-label", `${t.name}: ${last.label} ${last.value} ${last.unit}, ${ago(last.at)}. Open this calculator`);
+  }
+  store.onChange("last", (v) => { last = v; renderLast(); });
   let announceTimer;
   function renderResult() {
     const t = tool();
@@ -548,6 +594,7 @@
         ${r.note ? `<p class="note">${esc(r.note)}</p>` : "<span></span>"}
         <button type="button" class="copy-btn" id="copyBtn">Copy result</button>
       </div>`;
+    recordLast(t, r);
     lastSummary = [`${t.name}: ${r.label} ${r.value}${r.unit ? " " + r.unit : ""}`]
       .concat(r.alt ? [r.alt] : [])
       .concat((r.facts || []).map(([k, val]) => `${k}: ${val}`)).join("\n");
@@ -675,6 +722,61 @@
   }
   window.addEventListener("pagehide", persist);
 
+  $("lastBtn").addEventListener("click", () => {
+    if (!last || !TOOL_BY_ID[last.tool]) return;
+    state.tool = last.tool;
+    if (last.system) state.system = last.system;
+    persist();
+    renderAll();
+    $("toolName").setAttribute("tabindex", "-1");
+    $("toolName").focus();
+  });
+  setInterval(renderLast, 60000);
+
+  // ---------- theme and settings dialog ----------
+  const dialog = $("settingsDialog");
+  window.JobSiteTheme.render($("themePanel"));   // mode, accent, colors, contrast (shared/theme.js)
+  $("openSettings").addEventListener("click", () => {
+    dialog.showModal();
+    dialog.querySelector('input[name="t-mode"]:checked')?.focus();
+  });
+  $("closeSettings").addEventListener("click", () => dialog.close());
+  dialog.addEventListener("click", (e) => { if (e.target === dialog) dialog.close(); });   // backdrop
+  dialog.addEventListener("close", () => {
+    $("resetConfirm").hidden = true;
+    $("resetBtn").hidden = false;
+    $("openSettings").focus();
+  });
+  $("resetBtn").addEventListener("click", () => {
+    $("resetConfirm").hidden = false;
+    $("resetBtn").hidden = true;
+    $("resetNo").focus();
+  });
+  $("resetNo").addEventListener("click", () => {
+    $("resetConfirm").hidden = true;
+    $("resetBtn").hidden = false;
+    $("resetBtn").focus();
+  });
+  $("resetYes").addEventListener("click", () => {
+    window.JobSiteTheme.reset();
+    state.system = defaultSystem();
+    if ($("resetData").checked) {
+      state.values = {};
+      last = null;
+      store.remove("last");
+      renderLast();
+    }
+    $("resetData").checked = false;
+    persist();
+    renderAll();
+    $("resetConfirm").hidden = true;
+    $("resetBtn").hidden = false;
+    $("resetBtn").focus();
+    $("srStatus").textContent = "Default settings restored";
+  });
+  // another tab changed the units or measurements
+  store.onChange("settings", () => { Object.assign(state, loadSettings()); renderAll(); });
+
   // Open a tool from a link or home-screen shortcut, e.g. #stairs
   const fromHash = () => { const id = location.hash.slice(1); if (TOOL_BY_ID[id] && id !== state.tool) { state.tool = id; return true; } return false; };
   fromHash();
@@ -682,4 +784,5 @@
 
   renderNav();
   renderAll();
+  renderLast();
 })();

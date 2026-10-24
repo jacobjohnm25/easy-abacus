@@ -1,10 +1,11 @@
 // Offline support: the app shell is cached on install; Google Fonts are cached the first time they load.
-const VERSION = "v2";
+const VERSION = "v3";
 const PREFIX = "calc-";
 const SHELL = `${PREFIX}shell-${VERSION}`;
 const FONTS = `${PREFIX}fonts-${VERSION}`;
 const ASSETS = [
   "./", "index.html", "styles.css", "app.js", "manifest.webmanifest",
+  "shared/storage.js", "shared/theme.js", "shared/theme.css",
   "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png",
 ];
 

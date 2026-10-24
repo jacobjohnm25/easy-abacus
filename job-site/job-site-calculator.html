@@ -1,8 +1,7 @@
 <title>Job Site Calculator</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="description" content="Trade calculators for concrete, bricks, lumber, stairs, drain fall, pipe volume, tiles, squaring and unit conversion. Works offline.">
-<meta name="theme-color" content="#e8eaec" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#121417" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#e8eaec">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -13,7 +12,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="shared/theme.css">
 <link rel="stylesheet" href="styles.css">
+<script src="shared/storage.js"></script>
+<script src="shared/theme.js"></script>
+<script src="theme-config.js"></script>
 <script src="app.js" defer></script>
 <div class="app">
   <header class="top">
@@ -29,6 +32,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
         Install app
       </button>
+      <button type="button" class="install-btn" id="openSettings" aria-haspopup="dialog">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.8 1.8-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-1 .8-1.8 1.8-1.8H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8z"/><circle cx="7.5" cy="11.5" r="1.2"/><circle cx="10.5" cy="7.5" r="1.2"/><circle cx="15" cy="8" r="1.2"/></svg>
+        Theme
+      </button>
       <fieldset class="units">
         <legend class="sr-only">Units</legend>
         <div class="seg">
@@ -38,6 +45,11 @@
       </fieldset>
     </div>
   </header>
+
+  <div class="last-bar" id="lastBar" hidden>
+    <span class="last-label" id="lastLabel">Last calculation</span>
+    <button type="button" class="last-btn" id="lastBtn" aria-describedby="lastLabel"></button>
+  </div>
 
   <div class="layout">
     <nav class="tools" aria-label="Calculators">
@@ -68,4 +80,30 @@
     </main>
   </div>
   <p class="offline-note" id="offlineNote" role="status" hidden>You're offline. Everything still works.</p>
+
+  <dialog class="sheet-dialog" id="settingsDialog" aria-labelledby="settingsTitle">
+    <div class="dialog-head">
+      <div>
+        <h2 id="settingsTitle">Theme and settings</h2>
+        <p>Changes apply right away and save on this device.</p>
+      </div>
+      <button type="button" class="close-btn" id="closeSettings" aria-label="Close theme and settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="dialog-body">
+      <div id="themePanel"></div>
+      <div class="t-field">
+        <h3 class="t-title">Saved on this device</h3>
+        <p class="t-note">Your units, the tool you were on, every tool's measurements and your last calculation.</p>
+        <button type="button" class="t-btn danger-outline" id="resetBtn">Restore default settings</button>
+        <div class="confirm" id="resetConfirm" hidden>
+          <p>Reset mode, accent, colors and units to the defaults?</p>
+          <label class="check-row" for="resetData"><input type="checkbox" id="resetData"> Also clear my measurements and last calculation</label>
+          <button type="button" class="t-btn danger" id="resetYes">Restore defaults</button>
+          <button type="button" class="t-btn" id="resetNo">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
 </div>

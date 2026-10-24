@@ -14,6 +14,7 @@ const out = src
   .replace(/<\/?head>\s*/gi, "")
   .replace(/<\/?body>\s*/gi, "")
   .replace(/<meta charset[^>]*>\s*/i, "")
-  .replace(/<meta name="viewport"[^>]*>\s*/i, "");
+  .replace(/<meta name="viewport"[^>]*>\s*/i, "")
+  .replace(/(["'])\.\.\/shared\//g, "$1shared/");   // the preview publishes shared/ next to the page
 writeFileSync(`${dir}/${OUT[app] || "preview.html"}`, out);
 console.log(`wrote ${app}/${OUT[app] || "preview.html"}`);
