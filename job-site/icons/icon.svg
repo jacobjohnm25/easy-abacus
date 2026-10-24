@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#1d2328"/>
+  <rect x="64" y="176" width="384" height="160" rx="20" fill="#f5b400"/>
+  <g stroke="#1d2328" stroke-width="10" stroke-linecap="round">
+    <path d="M112 176v72M176 176v40M240 176v72M304 176v40M368 176v72"/>
+    <path d="M144 176v24M208 176v24M272 176v24M336 176v24M400 176v24" stroke-width="6"/>
+  </g>
+  <text x="256" y="312" text-anchor="middle" font-family="Arial Narrow, Arial, sans-serif" font-weight="700" font-size="64" fill="#1d2328">JOB SITE</text>
+</svg>

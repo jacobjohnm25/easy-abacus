@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Job Site Calculator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Trade calculators for concrete, bricks, lumber, stairs, drain fall, pipe volume, tiles, squaring and unit conversion. Works offline.">
+<meta name="theme-color" content="#e8eaec" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121417" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Job Site">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="styles.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">JS</div>
+      <div>
+        <h1>Job Site Calculator</h1>
+        <p>Quick numbers for concrete, brick, timber, pipe and tile</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button type="button" class="install-btn" id="installBtn" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+        Install app
+      </button>
+      <fieldset class="units">
+        <legend class="sr-only">Units</legend>
+        <div class="seg">
+          <input type="radio" name="system" id="sysImperial" value="imperial"><label for="sysImperial">Imperial <span class="seg-sub">ft, in</span></label>
+          <input type="radio" name="system" id="sysMetric" value="metric"><label for="sysMetric">Metric <span class="seg-sub">m, mm</span></label>
+        </div>
+      </fieldset>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="tools" aria-label="Calculators">
+      <div class="tool-scroll" id="toolScroll"><div class="group-list" id="toolNav"></div></div>
+    </nav>
+
+    <main class="sheet" id="sheet">
+      <div class="sheet-head">
+        <div class="trade" id="toolTrade"></div>
+        <h2 id="toolName"></h2>
+        <p id="toolDesc"></p>
+      </div>
+      <div class="work">
+        <form class="inputs" id="inputs" novalidate>
+          <div class="inputs-head">
+            <h3>Measurements</h3>
+            <button type="button" class="text-btn" id="resetTool">Reset to example</button>
+          </div>
+          <div class="fields" id="fields"></div>
+          <p class="tip">Fractions work: type <strong>1 1/2</strong> or <strong>3/8</strong>.</p>
+        </form>
+        <section class="result" aria-labelledby="resultHeading">
+          <div class="tape" aria-hidden="true"></div>
+          <div class="result-body" id="resultBody"></div>
+        </section>
+      </div>
+      <p class="sr-only" id="srStatus" role="status" aria-live="polite" aria-atomic="true"></p>
+    </main>
+  </div>
+  <p class="offline-note" id="offlineNote" role="status" hidden>You're offline. Everything still works.</p>
+</div>
+</body>
+</html>

@@ -1,7 +1,8 @@
 // Offline support: the app shell is cached on install; Google Fonts are cached the first time they load.
-const VERSION = "v1";
-const SHELL = `calc-shell-${VERSION}`;
-const FONTS = `calc-fonts-${VERSION}`;
+const VERSION = "v2";
+const PREFIX = "calc-";
+const SHELL = `${PREFIX}shell-${VERSION}`;
+const FONTS = `${PREFIX}fonts-${VERSION}`;
 const ASSETS = [
   "./", "index.html", "styles.css", "app.js", "manifest.webmanifest",
   "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png",
@@ -14,7 +15,7 @@ self.addEventListener("install", (e) => {
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== SHELL && k !== FONTS).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith(PREFIX) && k !== SHELL && k !== FONTS).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -36,6 +37,7 @@ self.addEventListener("fetch", (e) => {
   }
 
   if (url.origin !== location.origin) return;
+  if (url.pathname.startsWith(new URL("job-site/", self.registration.scope).pathname)) return;   // its own worker handles it
 
   // Pages: network first so updates show up, cache when offline.
   if (req.mode === "navigate") {

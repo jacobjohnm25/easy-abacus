@@ -1,0 +1,24 @@
+{
+  "name": "Job Site Calculator",
+  "short_name": "Job Site",
+  "description": "Trade calculators for concrete, bricks, lumber, stairs, drain fall, pipe volume, tiles, squaring and unit conversion.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#e8eaec",
+  "theme_color": "#e8eaec",
+  "categories": ["utilities", "productivity", "business"],
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Concrete", "url": "./#concrete" },
+    { "name": "Stairs", "url": "./#stairs" },
+    { "name": "Unit converter", "url": "./#convert" }
+  ]
+}
