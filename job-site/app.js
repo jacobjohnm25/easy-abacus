@@ -48,6 +48,11 @@
     tile: '<rect x="3" y="3" width="8" height="8"/><rect x="13" y="3" width="8" height="8"/><rect x="3" y="13" width="8" height="8"/><rect x="13" y="13" width="8" height="8"/>',
     square: '<path d="M4 20V4l16 16H4z"/><path d="M4 15h5v5"/>',
     convert: '<path d="M4 8h13l-3-3M20 16H7l3 3"/>',
+    bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+    wave: '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
+    wire: '<path d="M5 19c0-7 14-7 14-14"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/>',
+    breaker: '<rect x="6" y="3" width="12" height="18" rx="2"/><path d="M12 7v6"/><circle cx="12" cy="16.5" r="1"/>',
+    meter: '<circle cx="12" cy="13" r="8"/><path d="M12 13l4-4M12 3v2"/>',
   };
   const icon = (k) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k]}</svg>`;
 
@@ -66,6 +71,43 @@
     if (cat === "temperature") return fromKelvin(toKelvin(v, from), to);
     const u = CONV[cat].units;
     return v * u[from] / u[to];
+  }
+
+  // ---------- electrical tables ----------
+  // Conductor areas: circular mils (AWG / kcmil) and mm² (IEC).
+  const WIRE = {
+    imperial: [["14", 4110], ["12", 6530], ["10", 10380], ["8", 16510], ["6", 26240], ["4", 41740], ["3", 52620], ["2", 66360],
+      ["1", 83690], ["1/0", 105600], ["2/0", 133100], ["3/0", 167800], ["4/0", 211600], ["250", 250000], ["300", 300000],
+      ["350", 350000], ["400", 400000], ["500", 500000]]
+      .map(([id, area]) => ({ id, area, label: `${id} ${+id >= 250 ? "kcmil" : "AWG"}` })),
+    metric: [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240]
+      .map((a) => ({ id: String(a), area: a, label: `${a} mm²` })),
+  };
+  const BREAKERS = {
+    imperial: [15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100, 110, 125, 150, 175, 200, 225, 250, 300, 350, 400],
+    metric: [6, 10, 13, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125],
+  };
+  const PHASES = [["single", "Single phase"], ["three", "Three phase"]];
+  const METALS = [["cu", "Copper"], ["al", "Aluminium"]];
+  const wireOptions = (s) => WIRE[s].map((w) => [w.id, w.label]);
+  const wireArea = (id, s) => (WIRE[s].find((w) => w.id === id) || WIRE[s][0]).area;
+  // K: ohm-cmil per ft at 75 °C (12.9 Cu, 21.2 Al); ρ: the same in Ω·mm² per m (0.0214 Cu, 0.0352 Al).
+  function voltageDrop(v, s, area) {
+    const k = s === "imperial" ? (v.material === "cu" ? 12.9 : 21.2) : (v.material === "cu" ? 0.0214 : 0.0352);
+    const mult = v.phase === "single" ? 2 : Math.sqrt(3);
+    return mult * k * v.amps * v.length / area;
+  }
+  function dropSteps(v, s, area, d) {
+    const imp = s === "imperial";
+    const k = imp ? (v.material === "cu" ? 12.9 : 21.2) : (v.material === "cu" ? 0.0214 : 0.0352);
+    const m = v.phase === "single" ? "2" : "√3";
+    return [
+      imp
+        ? `${m} × ${k} × ${num(v.amps)} A × ${num(v.length)} ft ÷ ${num(area, 0)} cmil = ${num(d, 2)} V`
+        : `${m} × ${k} × ${num(v.length)} m × ${num(v.amps)} A ÷ ${num(area)} mm² = ${num(d, 2)} V`,
+      `${num(d, 2)} V ÷ ${num(v.volts)} V = ${num(d / v.volts * 100, 2)}%`,
+      `${num(v.volts)} V − ${num(d, 2)} V = ${num(v.volts - d, 1)} V at the load`,
+    ];
   }
 
   // ---------- calculators ----------
@@ -355,6 +397,193 @@
           alt: `${num(area * (1 + v.waste / 100))} ${au} to buy`,
           facts, steps,
           note: "Buy from one batch (lot number) so the color matches.",
+        };
+      },
+    },
+    {
+      id: "ohms", trade: "Electrical", name: "Ohm's law and watts", icon: "bolt",
+      desc: "Enter any two of volts, amps, ohms and watts to get the other two.",
+      fields: [
+        { id: "known", label: "I know", type: "select", wide: true, def: { imperial: "VI", metric: "VI" },
+          options: () => [["VI", "Volts and amps"], ["VR", "Volts and ohms"], ["IR", "Amps and ohms"],
+            ["PV", "Watts and volts"], ["PI", "Watts and amps"], ["PR", "Watts and ohms"]] },
+        { id: "V", label: "Voltage", unit: { imperial: "V", metric: "V" }, def: { imperial: "120", metric: "230" }, show: (v) => v.known.includes("V") },
+        { id: "I", label: "Current", unit: { imperial: "A", metric: "A" }, def: { imperial: "15", metric: "10" }, show: (v) => v.known.includes("I") },
+        { id: "R", label: "Resistance", unit: { imperial: "Ω", metric: "Ω" }, def: { imperial: "8", metric: "23" }, show: (v) => v.known.includes("R") },
+        { id: "P", label: "Power", unit: { imperial: "W", metric: "W" }, def: { imperial: "1800", metric: "2300" }, show: (v) => v.known.includes("P") },
+      ],
+      compute(v) {
+        let { V, I, R, P } = v;
+        let steps, primary;
+        switch (v.known) {
+          case "VI": R = V / I; P = V * I; primary = "P";
+            steps = [`R = V ÷ I = ${num(V)} ÷ ${num(I)} = ${num(R, 3)} Ω`, `P = V × I = ${num(V)} × ${num(I)} = ${num(P, 1)} W`]; break;
+          case "VR": I = V / R; P = V * V / R; primary = "I";
+            steps = [`I = V ÷ R = ${num(V)} ÷ ${num(R)} = ${num(I, 3)} A`, `P = V² ÷ R = ${num(V)}² ÷ ${num(R)} = ${num(P, 1)} W`]; break;
+          case "IR": V = I * R; P = I * I * R; primary = "V";
+            steps = [`V = I × R = ${num(I)} × ${num(R)} = ${num(V, 2)} V`, `P = I² × R = ${num(I)}² × ${num(R)} = ${num(P, 1)} W`]; break;
+          case "PV": I = P / V; R = V * V / P; primary = "I";
+            steps = [`I = P ÷ V = ${num(P)} ÷ ${num(V)} = ${num(I, 3)} A`, `R = V² ÷ P = ${num(V)}² ÷ ${num(P)} = ${num(R, 3)} Ω`]; break;
+          case "PI": V = P / I; R = P / (I * I); primary = "V";
+            steps = [`V = P ÷ I = ${num(P)} ÷ ${num(I)} = ${num(V, 2)} V`, `R = P ÷ I² = ${num(P)} ÷ ${num(I)}² = ${num(R, 3)} Ω`]; break;
+          default: I = Math.sqrt(P / R); V = Math.sqrt(P * R); primary = "I";
+            steps = [`I = √(P ÷ R) = √(${num(P)} ÷ ${num(R)}) = ${num(I, 3)} A`, `V = √(P × R) = √(${num(P)} × ${num(R)}) = ${num(V, 2)} V`];
+        }
+        const OUT = { V: ["Voltage", num(V, 2), "V"], I: ["Current", num(I, 3), "A"], R: ["Resistance", num(R, 3), "Ω"], P: ["Power", num(P, 1), "W"] };
+        const [label, value, unit] = OUT[primary];
+        return {
+          label, value, unit,
+          alt: `${num(P / 1000, 3)} kW · ${num(P * 3.41214, 0)} BTU/h of heat`,
+          facts: ["V", "I", "R", "P"].map((k) => [OUT[k][0], `${OUT[k][1]} ${OUT[k][2]}`]),
+          steps,
+          note: "For DC and resistive AC loads. Motors and other inductive loads draw more current than watts ÷ volts.",
+        };
+      },
+    },
+    {
+      id: "vdrop", trade: "Electrical", name: "Voltage drop", icon: "wave",
+      desc: "How many volts a cable loses over its run, and the voltage left at the load.",
+      fields: [
+        { id: "phase", label: "Supply", type: "select", def: { imperial: "single", metric: "single" }, options: () => PHASES },
+        { id: "material", label: "Conductor", type: "select", def: { imperial: "cu", metric: "cu" }, options: () => METALS },
+        { id: "volts", label: "Supply voltage", unit: { imperial: "V", metric: "V" }, def: { imperial: "120", metric: "230" } },
+        { id: "amps", label: "Load current", unit: { imperial: "A", metric: "A" }, def: { imperial: "16", metric: "16" } },
+        { id: "length", label: "Cable run, one way", unit: { imperial: "ft", metric: "m" }, def: { imperial: "100", metric: "30" } },
+        { id: "size", label: "Wire size", type: "select", def: { imperial: "12", metric: "2.5" }, options: (s) => wireOptions(s) },
+      ],
+      compute(v, s) {
+        const d = voltageDrop(v, s, wireArea(v.size, s));
+        const pct = d / v.volts * 100;
+        const ok = pct <= 3;
+        return {
+          label: "Voltage drop", value: num(d, 2), unit: "V",
+          alt: `${num(pct, 2)}% of ${num(v.volts)} V`,
+          facts: [
+            ["Voltage at the load", `${num(v.volts - d, 1)} V`],
+            ["Drop", `${num(pct, 2)}%`],
+            ["Power lost in the cable", `${num(d * v.amps, 0)} W`],
+          ],
+          checks: [[ok, ok ? "Under 3%, the usual target for a branch circuit." : "Over 3%. Consider a larger wire size or a shorter run."]],
+          steps: dropSteps(v, s, wireArea(v.size, s), d),
+          note: "Resistance at 75 °C conductor temperature. Common guidance: 3% for a branch circuit, 5% in total.",
+        };
+      },
+    },
+    {
+      id: "wiresize", trade: "Electrical", name: "Wire size for a run", icon: "wire",
+      desc: "The smallest wire that keeps voltage drop under your limit.",
+      fields: [
+        { id: "phase", label: "Supply", type: "select", def: { imperial: "single", metric: "single" }, options: () => PHASES },
+        { id: "material", label: "Conductor", type: "select", def: { imperial: "cu", metric: "cu" }, options: () => METALS },
+        { id: "volts", label: "Supply voltage", unit: { imperial: "V", metric: "V" }, def: { imperial: "240", metric: "230" } },
+        { id: "amps", label: "Load current", unit: { imperial: "A", metric: "A" }, def: { imperial: "30", metric: "32" } },
+        { id: "length", label: "Cable run, one way", unit: { imperial: "ft", metric: "m" }, def: { imperial: "150", metric: "40" } },
+        { id: "maxDrop", label: "Allowed drop", unit: { imperial: "%", metric: "%" }, def: { imperial: "3", metric: "3" } },
+      ],
+      compute(v, s) {
+        const imp = s === "imperial";
+        const k = imp ? (v.material === "cu" ? 12.9 : 21.2) : (v.material === "cu" ? 0.0214 : 0.0352);
+        const mult = v.phase === "single" ? 2 : Math.sqrt(3);
+        const allowed = v.volts * v.maxDrop / 100;
+        const need = mult * k * v.amps * v.length / allowed;   // cmil | mm²
+        const sizes = WIRE[s];
+        const pick = sizes.find((w) => w.area >= need);
+        if (!pick) return { error: `No size up to ${sizes[sizes.length - 1].label} keeps the drop under ${num(v.maxDrop)}%. Shorten the run, raise the voltage or run parallel conductors.` };
+        const d = voltageDrop(v, s, pick.area);
+        const idx = sizes.indexOf(pick);
+        const facts = [
+          ["Drop with this size", `${num(d, 2)} V (${num(d / v.volts * 100, 2)}%)`],
+          ["Voltage at the load", `${num(v.volts - d, 1)} V`],
+        ];
+        if (idx > 0) {
+          const smaller = sizes[idx - 1];
+          facts.push([`One size smaller (${smaller.label})`, `${num(voltageDrop(v, s, smaller.area) / v.volts * 100, 2)}% drop`]);
+        }
+        return {
+          label: "Smallest wire size", value: pick.label.replace(/ (AWG|kcmil|mm²)$/, ""), unit: pick.label.match(/(AWG|kcmil|mm²)$/)[1],
+          alt: `${v.material === "cu" ? "Copper" : "Aluminium"}, ${v.phase === "single" ? "single phase" : "three phase"}`,
+          facts,
+          checks: [[false, "Sized for voltage drop only. The wire must also carry the current (ampacity) and match the breaker under your electrical code."]],
+          steps: [
+            `Allowed drop = ${num(v.volts)} V × ${num(v.maxDrop)}% = ${num(allowed, 2)} V`,
+            imp
+              ? `Area needed = ${mult === 2 ? "2" : "√3"} × ${k} × ${num(v.amps)} A × ${num(v.length)} ft ÷ ${num(allowed, 2)} V = ${num(need, 0)} cmil`
+              : `Area needed = ${mult === 2 ? "2" : "√3"} × ${k} × ${num(v.length)} m × ${num(v.amps)} A ÷ ${num(allowed, 2)} V = ${num(need, 2)} mm²`,
+            `Next standard size up: ${pick.label} (${imp ? num(pick.area, 0) + " cmil" : num(pick.area) + " mm²"})`,
+          ],
+          note: "Resistance at 75 °C conductor temperature.",
+        };
+      },
+    },
+    {
+      id: "breaker", trade: "Electrical", name: "Load and breaker size", icon: "breaker",
+      desc: "Current drawn by a load and the next standard breaker size.",
+      fields: [
+        { id: "watts", label: "Load", unit: { imperial: "W", metric: "W" }, def: { imperial: "3600", metric: "3600" } },
+        { id: "volts", label: "Voltage", unit: { imperial: "V", metric: "V" }, def: { imperial: "240", metric: "230" } },
+        { id: "phase", label: "Supply", type: "select", def: { imperial: "single", metric: "single" }, options: () => PHASES },
+        { id: "pf", label: "Power factor", unit: { imperial: "0–1", metric: "0–1" }, def: { imperial: "1", metric: "1" }, help: "1 for heaters and lights" },
+        { id: "continuous", label: "Runs 3 hours or more", type: "select", wide: true, def: { imperial: "yes", metric: "no" },
+          options: () => [["yes", "Yes, continuous load (size at 125%)"], ["no", "No"]] },
+      ],
+      compute(v, s) {
+        if (v.pf > 1) return { error: "Power factor is between 0 and 1." };
+        const three = v.phase === "three";
+        const amps = v.watts / ((three ? Math.sqrt(3) : 1) * v.volts * v.pf);
+        const design = v.continuous === "yes" ? amps * 1.25 : amps;
+        const sizes = BREAKERS[s];
+        const br = sizes.find((b) => b >= design - 1e-9);
+        const kva = v.watts / v.pf / 1000;
+        return {
+          label: "Breaker size", value: br ? num(br, 0) : `Over ${sizes[sizes.length - 1]}`, unit: "A",
+          alt: `Load draws ${num(amps, 1)} A`,
+          facts: [
+            ["Load current", `${num(amps, 2)} A`],
+            ["Sized for", `${num(design, 2)} A`],
+            ["Apparent power", `${num(kva, 2)} kVA`],
+          ],
+          steps: [
+            three
+              ? `I = ${num(v.watts)} W ÷ (√3 × ${num(v.volts)} V × ${num(v.pf)}) = ${num(amps, 2)} A`
+              : `I = ${num(v.watts)} W ÷ (${num(v.volts)} V × ${num(v.pf)}) = ${num(amps, 2)} A`,
+            v.continuous === "yes" ? `× 125% for a continuous load = ${num(design, 2)} A` : "Not continuous, so no extra allowance",
+            br ? `Next standard breaker: ${br} A` : "Larger than the standard sizes listed",
+          ],
+          note: s === "imperial"
+            ? "Standard NEC breaker sizes. The wire must be rated for the breaker; check your electrical code."
+            : "Standard IEC breaker sizes. The cable must be rated for the breaker; check your wiring regulations.",
+        };
+      },
+    },
+    {
+      id: "energy", trade: "Electrical", name: "Energy cost", icon: "meter",
+      desc: "What an appliance or tool costs to run per day, month and year.",
+      fields: [
+        { id: "watts", label: "Power", unit: { imperial: "W", metric: "W" }, def: { imperial: "1500", metric: "2000" } },
+        { id: "qty", label: "How many", unit: { imperial: "pcs", metric: "pcs" }, def: { imperial: "1", metric: "1" } },
+        { id: "hours", label: "Hours a day", unit: { imperial: "h", metric: "h" }, def: { imperial: "4", metric: "3" } },
+        { id: "days", label: "Days a month", unit: { imperial: "days", metric: "days" }, def: { imperial: "30", metric: "30" } },
+        { id: "price", label: "Price per kWh", wide: true, unit: { imperial: "$", metric: "per kWh" }, def: { imperial: "0.17", metric: "0.30" }, allowZero: true },
+      ],
+      compute(v, s) {
+        const cur = (x) => (s === "imperial" ? `$${fixed(x)}` : fixed(x));
+        const day = v.watts * v.qty * v.hours / 1000;
+        const month = day * v.days;
+        if (v.hours > 24) return { error: "A day only has 24 hours." };
+        return {
+          label: "Cost a month", value: cur(month * v.price), unit: "",
+          alt: `${num(month, 1)} kWh a month`,
+          facts: [
+            ["Per day", `${cur(day * v.price)} · ${num(day, 2)} kWh`],
+            ["Per year", `${cur(month * 12 * v.price)} · ${num(month * 12, 0)} kWh`],
+            ["Per hour running", cur(v.watts * v.qty / 1000 * v.price)],
+          ],
+          steps: [
+            `${num(v.watts)} W × ${num(v.qty)} × ${num(v.hours)} h ÷ 1000 = ${num(day, 3)} kWh a day`,
+            `× ${num(v.days)} days = ${num(month, 2)} kWh a month`,
+            `× ${s === "imperial" ? "$" : ""}${num(v.price, 4)} per kWh = ${cur(month * v.price)}`,
+          ],
+          note: "Uses the rated power. Many tools and appliances draw less on average.",
         };
       },
     },

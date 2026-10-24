@@ -1,7 +1,7 @@
 {
   "name": "Job Site Calculator",
   "short_name": "Job Site",
-  "description": "Trade calculators for concrete, bricks, lumber, stairs, drain fall, pipe volume, tiles, squaring and unit conversion.",
+  "description": "Trade calculators for concrete, bricks, lumber, stairs, plumbing, tiles, electrical work and unit conversion.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
@@ -19,6 +19,7 @@
   "shortcuts": [
     { "name": "Concrete", "url": "./#concrete" },
     { "name": "Stairs", "url": "./#stairs" },
+    { "name": "Voltage drop", "url": "./#vdrop" },
     { "name": "Unit converter", "url": "./#convert" }
   ]
 }

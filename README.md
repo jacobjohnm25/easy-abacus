@@ -3,7 +3,7 @@
 Two installable, offline-ready calculator apps that share one theme system and one saved-settings store.
 
 - **Live Tape Calculator** (`/`): a simple calculator with a live display and history
-- **Job Site Calculator** (`/job-site/`): trade calculators for concrete, bricks, lumber, stairs, drain fall, pipe volume, tiles, squaring and unit conversion, in imperial or metric
+- **Job Site Calculator** (`/job-site/`): trade calculators for concrete, bricks, lumber, stairs, plumbing, tiles, electrical work, squaring and unit conversion, in imperial or metric
 
 ## Live Tape Calculator
 
@@ -19,6 +19,7 @@ A simple calculator that shows the calculation and its result live as you type.
 ## Job Site Calculator
 
 - Concrete (slab, footing or column, with premix bags), bricks and blocks, board feet, stairs, drain pipe fall, water in a pipe, tiles and flooring, square and diagonal, unit converter
+- Electrical: Ohm's law and watts, voltage drop, wire size for a run (by voltage drop), load and breaker size, energy cost
 - Imperial or metric; fractions like `1 1/2` work and lengths show to the nearest 1/16″
 - Each result shows how it was worked out and can be copied
 - Remembers your tool, units and measurements; links like `job-site/#stairs` open a tool directly
