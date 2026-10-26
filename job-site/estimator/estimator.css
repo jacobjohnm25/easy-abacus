@@ -43,7 +43,7 @@ kbd { font-family: var(--font-mono); font-size: .85em; padding: 0 4px; border: 1
 .opt-btn { justify-content: flex-end; }
 .opt select:focus-visible, .opt input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
 
-.canvas-wrap { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); }
+.canvas-wrap { position: relative; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); }
 .canvas { display: block; width: 100%; height: auto; max-height: 72vh; touch-action: none; cursor: crosshair; user-select: none; -webkit-user-select: none; }
 .canvas[data-tool="select"] { cursor: default; }
 .canvas:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
@@ -60,8 +60,38 @@ kbd { font-family: var(--font-mono); font-size: .85em; padding: 0 4px; border: 1
 .canvas .dim { fill: var(--ink); font-family: var(--font-mono); font-weight: 500; paint-order: stroke; stroke: var(--surface); stroke-linejoin: round; }
 .canvas .dim.sel { fill: var(--accent); }
 .canvas .preview { stroke: var(--accent); stroke-dasharray: 1 .6; fill: none; }
+.canvas .preview-ink { stroke: var(--accent); fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.canvas .ink { stroke: var(--muted); stroke-opacity: .45; fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: .6 .5; }
+.canvas .piece.curve { fill: none; stroke-linejoin: round; }
+.canvas .dim.typed { font-family: "Caveat", "Segoe Print", "Bradley Hand", cursive; font-weight: 700; fill: var(--accent); }
+.canvas .dim.approx { fill: var(--muted); }
 .canvas .snap-dot { fill: var(--accent); }
 .help { margin: 0; font-size: .85rem; color: var(--muted); line-height: 1.5; }
+.scale-note { margin: 0; font-size: .85rem; font-weight: 600; color: var(--accent); min-height: 1.3em; }
+.field-info { margin: 0; grid-column: 1 / -1; font-size: .82rem; color: var(--muted); line-height: 1.4; }
+.opt-check { justify-content: flex-end; }
+.opt-check .check-row { min-height: 44px; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: .9rem; cursor: pointer; }
+.opt-check input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
+
+/* tap-and-type size box */
+.size-pop {
+  position: absolute; z-index: 5; width: min(300px, calc(100% - 16px)); padding: 12px;
+  display: flex; flex-direction: column; gap: 6px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 12px 32px -12px rgba(0, 0, 0, .45);
+}
+.size-pop label { font-weight: 700; font-size: .9rem; }
+.size-row { display: flex; gap: 6px; }
+.size-row input {
+  flex: 1; min-width: 0; min-height: 44px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--sunk);
+  font-family: "Caveat", "Segoe Print", cursive; font-size: 1.5rem; font-weight: 700; color: var(--accent);
+}
+.size-row input::placeholder { color: var(--muted); font-family: var(--font-mono); font-size: 1rem; font-weight: 400; }
+.size-row input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+.size-row input[aria-invalid="true"] { border-color: var(--warn); }
+.size-hint { margin: 0; font-size: .8rem; color: var(--muted); min-height: 1.1em; }
+.size-row input[aria-invalid="true"] + button + .size-hint, .size-pop:has([aria-invalid="true"]) .size-hint { color: var(--warn); font-weight: 600; }
+.size-actions { display: flex; justify-content: space-between; gap: 4px; }
 
 .editor { border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 10px; }
 .editor-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; align-items: end; }
@@ -133,7 +163,8 @@ kbd { font-family: var(--font-mono); font-size: .85em; padding: 0 4px; border: 1
 @media (max-width: 520px) {
   .drawing, .pieces { padding: 12px; }
   .toolbar { flex-direction: column; }
-  .views, .tools-row { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .views { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .tools-row { display: grid; grid-template-columns: repeat(2, 1fr); }
   .views button, .tool-toggle { justify-content: center; padding: 0 6px; }
   .draw-options, .add-fields { grid-template-columns: 1fr 1fr; }
   .canvas { max-height: none; }
@@ -148,5 +179,6 @@ kbd { font-family: var(--font-mono); font-size: .85em; padding: 0 4px; border: 1
   .views button[aria-selected="true"], .tool-toggle[aria-pressed="true"] { outline: 2px solid Highlight; }
   .canvas .piece, .canvas .panel { stroke: CanvasText; }
   .canvas .piece.sel, .canvas .panel.sel { stroke: Highlight; }
+  .canvas .dim, .canvas .dim.typed, .canvas .dim.approx { fill: CanvasText; }
   .bar .cut { forced-color-adjust: none; }
 }

@@ -72,7 +72,7 @@
   const mm = (inches) => (metric() ? ` (${num(inches * 25.4, 0)} mm)` : "");
 
   // ---------- project ----------
-  const DEFAULT_SETTINGS = { profile: "2x4", sheet: "ply-3/4", fastener: "screws", area: "48x48", grid: 1, view: "front", tool: "board" };
+  const DEFAULT_SETTINGS = { profile: "2x4", sheet: "ply-3/4", fastener: "screws", area: "48x48", grid: 1, view: "front", tool: "draw", showInk: true };
   let nextId = 1;
   const newId = () => `p${nextId++}`;
 
@@ -102,6 +102,8 @@
     if (!p || !VIEWS[p.view] || typeof p.qty !== "number") return false;
     if (p.kind === "board") return PROFILES[p.profile] && [p.x1, p.y1, p.x2, p.y2].every(isFinite);
     if (p.kind === "panel") return SHEETS[p.sheet] && [p.x, p.y, p.w, p.h].every(isFinite);
+    if (p.kind === "curve") return PROFILES[p.profile] && Array.isArray(p.pts) && p.pts.length >= 2;
+    if (p.kind === "shape") return SHEETS[p.sheet] && (p.circle ? [p.circle.cx, p.circle.cy, p.circle.r].every(isFinite) : Array.isArray(p.pts) && p.pts.length >= 3);
     return false;
   }
   function loadProject() {
@@ -114,7 +116,15 @@
     if (!VIEWS[s.view]) s.view = "front";
     if (!["screws", "pocket"].includes(s.fastener)) s.fastener = "screws";
     if (![1, 0.5, 0.25].includes(+s.grid)) s.grid = 1;
-    const pieces = saved.pieces.filter(validPiece).map((p) => ({ ...p, id: newId() }));
+    if (!["draw", "board", "panel", "select"].includes(s.tool)) s.tool = "draw";
+    if (typeof s.showInk !== "boolean") s.showInk = true;
+    // fresh ids; a stroke's group id is kept so its pieces can be read again together
+    const pieces = saved.pieces.filter(validPiece).map((p) => {
+      const q = { ...p, id: newId() };
+      const main = q.dim ? (q.dim.len ?? Math.max(q.dim.w || 0, q.dim.h || 0)) : 0;
+      if (q.dim && !(main > 0)) { delete q.dim; delete q.dimText; }
+      return q;
+    });
     return { settings: s, pieces };
   }
   let project = loadProject();
@@ -134,8 +144,219 @@
   }
   const byId = (id) => project.pieces.find((p) => p.id === id);
   const boardLen = (p) => Math.hypot(p.x2 - p.x1, p.y2 - p.y1);
-  const pieceLabel = (p) => (p.kind === "board" ? p.profile : SHEETS[p.sheet].name);
-  const pieceSize = (p) => (p.kind === "board" ? ftIn(boardLen(p)) : `${inchFrac(p.w)} × ${inchFrac(p.h)}`);
+
+  // ---------- sizes: drawn, typed and scaled ----------
+  // A sketch is rough, so a size you type always wins. Pieces without one are scaled from the typed
+  // ones in the same view (median of typed ÷ drawn); with nothing typed the grid is the scale.
+  function measured(p) {
+    if (p.kind === "board") return { len: boardLen(p) };
+    if (p.kind === "curve") return curveBlank(p.pts);
+    if (p.kind === "panel") return { w: p.w, h: p.h };
+    if (p.circle) return { w: p.circle.r * 2, h: p.circle.r * 2 };
+    return minRect(p.pts);
+  }
+  const linear = (p) => p.kind === "board" || p.kind === "curve";
+  const mainOf = (s) => (s.len != null ? s.len : Math.max(s.w, s.h));
+  function viewScale(view) {
+    const r = project.pieces.filter((p) => p.view === view && p.dim).map((p) => {
+      const m = mainOf(measured(p));
+      return m > 0 ? mainOf(p.dim) / m : null;
+    }).filter((x) => x > 0).sort((a, b) => a - b);
+    return r.length ? r[Math.floor(r.length / 2)] : 1;
+  }
+  function size(p) {
+    const m = measured(p);
+    if (p.dim) {
+      if (p.kind === "curve") return { len: p.dim.len, depth: m.depth * (p.dim.len / (m.len || 1)), typed: true };
+      return { ...p.dim, typed: true };
+    }
+    const k = viewScale(p.view);
+    const out = {};
+    for (const [key, v] of Object.entries(m)) out[key] = v * k;
+    out.approx = !!p.free || Math.abs(k - 1) > 1e-6;
+    return out;
+  }
+  const pieceLabel = (p) => p.kind === "board" ? p.profile
+    : p.kind === "curve" ? `Curved ${p.profile}`
+    : `${SHEETS[p.sheet].name}${p.kind === "shape" ? (p.circle ? " circle" : " shape") : ""}`;
+  function pieceSize(p) {
+    const s = size(p);
+    const pre = s.approx ? "≈ " : "";
+    if (s.len != null) return pre + ftIn(s.len);
+    return p.circle ? `${pre}${inchFrac(s.w)} across` : `${pre}${inchFrac(s.w)} × ${inchFrac(s.h)}`;
+  }
+
+  // Typed sizes: 34, 34", 2' 10", 2ft 10 1/2in, 86 cm, 450mm, 1.2 m; sheets take "16 x 24".
+  function parseLength(raw) {
+    let s = String(raw || "").trim().toLowerCase().replace(/[″”]/g, '"').replace(/[′’]/g, "'").replace(/,/g, "");
+    if (!s) return null;
+    let m;
+    if ((m = s.match(/^(\d+(?:\.\d+)?)\s*(mm|cm|m)$/))) return +m[1] * { mm: 1 / 25.4, cm: 1 / 2.54, m: 39.3701 }[m[2]];
+    if ((m = s.match(/^(\d+(?:\.\d+)?)\s*(?:'|ft|feet|foot)\s*-?\s*(.*?)\s*(?:"|in|inch|inches)?$/))) {
+      const rest = m[2] ? parseQty(m[2]) : 0;
+      return rest == null || isNaN(rest) ? NaN : +m[1] * 12 + rest;
+    }
+    s = s.replace(/\s*(?:"|in|inch|inches)$/, "");
+    const v = parseQty(s);
+    return v == null ? NaN : v;
+  }
+  function parseSize2(raw) {
+    const parts = String(raw || "").trim().split(/\s*(?:x|×|\*|by)\s*/i);
+    if (parts.length !== 2) return null;
+    const [w, h] = parts.map(parseLength);
+    return w > 0 && h > 0 ? { w, h } : null;
+  }
+  // Applies a typed size to a piece; returns an error message or "".
+  function applySize(p, text) {
+    const t = String(text || "").trim();
+    if (!t) { delete p.dim; delete p.dimText; return ""; }
+    if (linear(p)) {
+      const L = parseLength(t);
+      if (!(L > 0)) return "Type a length like 34, 2' 10\" or 86 cm.";
+      p.dim = { len: L };
+    } else if (p.circle) {
+      const two = parseSize2(t);
+      const d = two ? Math.max(two.w, two.h) : parseLength(t);
+      if (!(d > 0)) return "Type the diameter, like 12 or 30 cm.";
+      p.dim = { w: d, h: d };
+    } else {
+      const two = parseSize2(t);
+      if (!two) return "Type width × height, like 16 x 24.";
+      p.dim = two;
+    }
+    p.dimText = t.slice(0, 24);
+    return "";
+  }
+
+  // ---------- freehand recognition ----------
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  const pathLen = (pts) => pts.reduce((s, p, i) => (i ? s + dist(pts[i - 1], p) : 0), 0);
+  function bbox(pts) {
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    const x = Math.min(...xs), y = Math.min(...ys);
+    return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+  }
+  function segDist(p, a, b) {
+    const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy;
+    const t = L2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2)) : 0;
+    return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+  }
+  // Ramer–Douglas–Peucker: keeps only the points that matter for the shape
+  function rdp(pts, eps) {
+    if (pts.length < 3) return pts.slice();
+    let idx = 0, dmax = 0;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const d = segDist(pts[i], pts[0], pts[pts.length - 1]);
+      if (d > dmax) { dmax = d; idx = i; }
+    }
+    if (dmax <= eps) return [pts[0], pts[pts.length - 1]];
+    return rdp(pts.slice(0, idx + 1), eps).slice(0, -1).concat(rdp(pts.slice(idx), eps));
+  }
+  const turn = (a, b, c) => {
+    const a1 = Math.atan2(b[1] - a[1], b[0] - a[0]), a2 = Math.atan2(c[1] - b[1], c[0] - b[0]);
+    let d = Math.abs(a2 - a1) * 180 / Math.PI;
+    return d > 180 ? 360 - d : d;
+  };
+  // drop corners that are nearly straight
+  function mergeStraight(pts, deg, closed) {
+    let out = pts.slice();
+    let changed = true;
+    while (changed && out.length > (closed ? 3 : 2)) {
+      changed = false;
+      for (let i = closed ? 0 : 1; i < (closed ? out.length : out.length - 1); i++) {
+        const a = out[(i - 1 + out.length) % out.length], b = out[i], c = out[(i + 1) % out.length];
+        if (turn(a, b, c) < deg) { out.splice(i, 1); changed = true; break; }
+      }
+    }
+    return out;
+  }
+  function minRect(pts) {
+    if (pts.length < 2) return { w: 0, h: 0 };
+    let best = null;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      const L = dist(a, b);
+      if (!L) continue;
+      const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+      const us = pts.map((p) => p[0] * ux + p[1] * uy), vs = pts.map((p) => -p[0] * uy + p[1] * ux);
+      const w = Math.max(...us) - Math.min(...us), h = Math.max(...vs) - Math.min(...vs);
+      if (!best || w * h < best.w * best.h) best = { w, h };
+    }
+    const r = best || { w: 0, h: 0 };
+    return r.w >= r.h ? r : { w: r.h, h: r.w };
+  }
+  // A curved piece is cut from a blank: as long as its chord, as deep as its bow
+  function curveBlank(pts) {
+    const a = pts[0], b = pts[pts.length - 1];
+    let L = dist(a, b);
+    let ux = 1, uy = 0;
+    if (L > 1e-6) { ux = (b[0] - a[0]) / L; uy = (b[1] - a[1]) / L; }
+    const us = pts.map((p) => p[0] * ux + p[1] * uy), vs = pts.map((p) => -p[0] * uy + p[1] * ux);
+    return { len: Math.max(...us) - Math.min(...us), depth: Math.max(...vs) - Math.min(...vs) };
+  }
+  const round2 = (pts) => pts.map(([x, y]) => [Math.round(x * 100) / 100, Math.round(y * 100) / 100]);
+
+  /** Turns one stroke into pieces. mode: auto | boards | curve | rect | circle | shape */
+  function interpret(ink, mode = "auto") {
+    const L = pathLen(ink);
+    const bb = bbox(ink);
+    const diag = Math.hypot(bb.w, bb.h) || 1;
+    const eps = Math.max(0.5, diag * 0.045);
+    const closed = L > 6 && dist(ink[0], ink[ink.length - 1]) < Math.max(1.5, L * 0.15);
+    const polyClosed = () => mergeStraight(rdp(ink.concat([ink[0]]), eps).slice(0, -1), 25, true);
+    let readAs = mode;
+    if (mode === "auto") {
+      if (closed) {
+        const cx = ink.reduce((s, p) => s + p[0], 0) / ink.length, cy = ink.reduce((s, p) => s + p[1], 0) / ink.length;
+        const rs = ink.map((p) => Math.hypot(p[0] - cx, p[1] - cy));
+        const mean = rs.reduce((s, r) => s + r, 0) / rs.length;
+        const sd = Math.sqrt(rs.reduce((s, r) => s + (r - mean) ** 2, 0) / rs.length);
+        const poly = polyClosed();
+        const square = poly.length === 4 && poly.every((p, i) => Math.abs(turn(poly[(i + 3) % 4], p, poly[(i + 1) % 4]) - 90) < 25);
+        readAs = square ? "rect" : sd / mean < 0.14 && poly.length > 4 ? "circle" : poly.length === 4 ? "rect" : "shape";
+      } else {
+        const simp = mergeStraight(rdp(ink, eps), 15, false);
+        const chord = dist(ink[0], ink[ink.length - 1]);
+        const bow = Math.max(...ink.map((p) => segDist(p, ink[0], ink[ink.length - 1])));
+        if (simp.length === 2 || bow < chord * 0.06) readAs = "boards";
+        else {
+          const fine = rdp(ink, Math.max(0.25, diag * 0.015));
+          const turns = fine.slice(1, -1).map((p, i) => turn(fine[i], p, fine[i + 2]));
+          readAs = fine.length >= 5 && Math.max(...turns) < 38 ? "curve" : "boards";
+        }
+      }
+    }
+    if (readAs === "boards") {
+      let v = closed && mode === "boards" ? polyClosed().concat([null]) : mergeStraight(rdp(ink, eps), 15, false);
+      if (v[v.length - 1] === null) v = v.slice(0, -1).concat([v[0]]);   // a closed frame: back to the start
+      v = v.map((p) => p.slice());
+      // square up nearly level or plumb runs, carrying each fix to the shared corner
+      for (let i = 0; i < v.length - 1; i++) {
+        const a = v[i], b = v[i + 1];
+        const ang = Math.abs(Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI);
+        if (ang < 9 || ang > 171) b[1] = a[1];
+        else if (Math.abs(ang - 90) < 9) b[0] = a[0];
+      }
+      if (closed && mode === "boards") v[v.length - 1] = v[0];
+      const segs = [];
+      for (let i = 0; i < v.length - 1; i++) if (dist(v[i], v[i + 1]) >= 0.5) segs.push({ kind: "board", x1: v[i][0], y1: v[i][1], x2: v[i + 1][0], y2: v[i + 1][1] });
+      return { readAs, pieces: segs };
+    }
+    if (readAs === "curve") return { readAs, pieces: [{ kind: "curve", pts: round2(rdp(ink, 0.12)) }] };
+    if (readAs === "circle") {
+      const cx = bb.x + bb.w / 2, cy = bb.y + bb.h / 2;
+      return { readAs, pieces: [{ kind: "shape", circle: { cx, cy, r: (bb.w + bb.h) / 4 }, pts: [] }] };
+    }
+    const poly = polyClosed();
+    if (readAs === "rect") {
+      const four = poly.length === 4 ? poly : (() => { const r = bbox(poly); return [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]]; })();
+      const ang = Math.abs(Math.atan2(four[1][1] - four[0][1], four[1][0] - four[0][0]) * 180 / Math.PI) % 90;
+      if (ang < 12 || ang > 78) { const r = bbox(four); return { readAs, pieces: [{ kind: "panel", x: r.x, y: r.y, w: r.w, h: r.h }] }; }
+      return { readAs, pieces: [{ kind: "shape", pts: round2(four) }] };
+    }
+    return { readAs, pieces: [{ kind: "shape", pts: round2(poly.length >= 3 ? poly : rdp(ink, 0.3)) }] };
+  }
+  const READ_AS = { boards: "Straight boards", curve: "Curved piece", rect: "Rectangle (sheet)", circle: "Circle (sheet)", shape: "Any shape (sheet)" };
 
   // ---------- geometry ----------
   function distToSeg(px, py, a) {
@@ -221,6 +442,13 @@
     });
   }
 
+  // The board a curved piece is cut from: same thickness, wide enough for its finished width plus the bow.
+  function curveStock(p) {
+    const s = size(p), prof = PROFILES[p.profile];
+    const width = s.depth + prof.w;
+    const pick = Object.entries(PROFILES).filter(([, q]) => q.t === prof.t && q.w >= width - 1e-9).sort((a, b) => a[1].w - b[1].w)[0];
+    return pick ? { profile: pick[0], width, len: s.len } : { sheet: "ply-3/4", width, len: s.len, layers: Math.max(1, Math.round(prof.t / 0.75)) };
+  }
   const screwLength = (need) => SCREW_LENGTHS.find((s) => s >= need - 0.01) || 3.5;
 
   function estimate() {
@@ -228,18 +456,29 @@
     const counted = project.pieces.filter((p) => p.qty > 0);
     // lumber
     const byProfile = {};
-    for (const p of counted.filter((x) => x.kind === "board")) {
-      const prof = PROFILES[p.profile];
+    const sheetItems = [];
+    for (const p of counted.filter(linear)) {
+      let profile = p.profile, len = size(p).len, name = p.name || p.profile;
+      if (p.kind === "curve") {
+        const st = curveStock(p);
+        name = `${p.name || "Curved piece"} (curved)`;
+        if (!st.profile) {
+          warnings.push(`${name} needs ${plainIn(st.width)} of width, wider than any ${p.profile.split("x")[0]}x board. It is cut from ${SHEETS[st.sheet].name}${st.layers > 1 ? `, ${st.layers} layers glued up` : ""}.`);
+          for (let i = 0; i < p.qty * st.layers; i++) sheetItems.push({ sheet: st.sheet, w: st.width, h: len, name });
+          continue;
+        }
+        profile = st.profile;
+      }
+      const prof = PROFILES[profile];
       const max = prof.lengths[prof.lengths.length - 1] * 12;
-      let len = boardLen(p);
       if (len < 0.25) continue;
       let parts = 1;
       if (len > max) {
         parts = Math.ceil(len / max);
-        warnings.push(`${p.name || p.profile} is ${ftIn(len)}, longer than the longest ${p.profile} (${max / 12} ft). It is split into ${parts} pieces that need joining.`);
+        warnings.push(`${name} is ${ftIn(len)}, longer than the longest ${profile} (${max / 12} ft). It is split into ${parts} pieces that need joining.`);
         len /= parts;
       }
-      for (let i = 0; i < p.qty * parts; i++) (byProfile[p.profile] ??= []).push({ len, name: p.name || p.profile });
+      for (let i = 0; i < p.qty * parts; i++) (byProfile[profile] ??= []).push({ len, name });
     }
     const lumber = Object.entries(byProfile).map(([profile, items]) => {
       const plan = packBoards(items, PROFILES[profile].lengths.map((f) => f * 12));
@@ -250,12 +489,16 @@
 
     // sheets
     const bySheet = {};
-    for (const p of counted.filter((x) => x.kind === "panel")) {
-      if (Math.min(p.w, p.h) > 48 || Math.max(p.w, p.h) > 96) {
-        warnings.push(`${p.name || "A sheet piece"} (${pieceSize(p)}) is bigger than a 4 × 8 ft sheet. Split it into smaller pieces.`);
+    for (const p of counted.filter((x) => !linear(x))) {
+      const { w, h } = size(p);
+      for (let i = 0; i < p.qty; i++) sheetItems.push({ sheet: p.sheet, w, h, name: p.name || SHEETS[p.sheet].name });
+    }
+    for (const it of sheetItems) {
+      if (Math.min(it.w, it.h) > 48 || Math.max(it.w, it.h) > 96) {
+        warnings.push(`${it.name} (${inchFrac(it.w)} × ${inchFrac(it.h)}) is bigger than a 4 × 8 ft sheet. Split it into smaller pieces.`);
         continue;
       }
-      for (let i = 0; i < p.qty; i++) (bySheet[p.sheet] ??= []).push({ w: p.w, h: p.h, name: p.name || SHEETS[p.sheet].name });
+      (bySheet[it.sheet] ??= []).push(it);
     }
     const sheets = Object.entries(bySheet).map(([sheet, items]) => {
       const layout = packSheets(items);
@@ -273,7 +516,9 @@
     };
     let joints = 0;
     for (const view of Object.keys(VIEWS)) {
-      const boards = project.pieces.filter((p) => p.view === view && p.kind === "board");
+      // curved pieces join at their two ends like a board
+      const boards = project.pieces.filter((p) => p.view === view && linear(p)).map((p) => p.kind === "board" ? p
+        : { ...p, x1: p.pts[0][0], y1: p.pts[0][1], x2: p.pts[p.pts.length - 1][0], y2: p.pts[p.pts.length - 1][1] });
       for (let i = 0; i < boards.length; i++) {
         for (let j = i + 1; j < boards.length; j++) {
           const a = boards[i], b = boards[j];
@@ -293,9 +538,11 @@
         }
       }
     }
-    for (const p of counted.filter((x) => x.kind === "panel")) {
+    for (const p of counted.filter((x) => !linear(x))) {
       const len = screwLength(SHEETS[p.sheet].t + 0.875);
-      addScrews(`wood-${len}`, `#8 wood screws, ${plainIn(len)}`, Math.ceil((2 * (p.w + p.h)) / 8) * p.qty, SCREWS_PER_LB[len], "1 lb box");
+      const { w, h } = size(p);
+      const edge = p.circle ? Math.PI * w : 2 * (w + h);
+      addScrews(`wood-${len}`, `#8 wood screws, ${plainIn(len)}`, Math.ceil(edge / 8) * p.qty, SCREWS_PER_LB[len], "1 lb box");
     }
     const screwList = Object.values(screws).map((s) => {
       const need = Math.ceil(s.n * 1.1);   // 10% spare
@@ -312,6 +559,7 @@
       lumber, sheets, screwList, joints, warnings, boardFeet,
       waste: stockTotal ? (stockTotal - cutTotal - KERF * 0) / stockTotal * 100 : 0,
       cuts: counted.reduce((s, p) => s + p.qty, 0),
+      approx: counted.some((p) => !p.dim && size(p).approx),
     };
   }
 
@@ -330,13 +578,19 @@
     const p = pt.matrixTransform(svg.getScreenCTM().inverse());
     return { x: p.x, y: p.y };
   }
+  // points of a piece that new pieces can snap to
+  function piecePoints(q) {
+    if (q.kind === "board") return [[q.x1, q.y1], [q.x2, q.y2]];
+    if (q.kind === "curve") return [q.pts[0], q.pts[q.pts.length - 1]];
+    if (q.kind === "panel") return [[q.x, q.y], [q.x + q.w, q.y], [q.x, q.y + q.h], [q.x + q.w, q.y + q.h]];
+    return q.circle ? [] : q.pts;
+  }
   function snap(p) {
     const [W, H] = area();
     snapPoint = null;
     let best = SNAP_END;
     for (const q of viewPieces()) {
-      const pts = q.kind === "board" ? [[q.x1, q.y1], [q.x2, q.y2]] : [[q.x, q.y], [q.x + q.w, q.y], [q.x, q.y + q.h], [q.x + q.w, q.y + q.h]];
-      for (const [x, y] of pts) {
+      for (const [x, y] of piecePoints(q)) {
         const d = Math.hypot(p.x - x, p.y - y);
         if (d < best) { best = d; snapPoint = { x, y }; }
       }
@@ -345,6 +599,27 @@
     const g = +S().grid;
     return { x: Math.max(0, Math.min(W, Math.round(p.x / g) * g)), y: Math.max(0, Math.min(H, Math.round(p.y / g) * g)) };
   }
+  // freehand ends join nearby ends, or land on a nearby board for a T joint
+  function snapEnd(pt, skip) {
+    let best = SNAP_END * 1.5, out = null;
+    for (const q of viewPieces()) {
+      if (skip.has(q.id)) continue;
+      for (const [x, y] of piecePoints(q)) {
+        const d = Math.hypot(pt[0] - x, pt[1] - y);
+        if (d < best) { best = d; out = [x, y]; }
+      }
+    }
+    if (out) return out;
+    for (const q of viewPieces()) {
+      if (skip.has(q.id) || q.kind !== "board") continue;
+      if (distToSeg(pt[0], pt[1], q) < 2) {
+        const dx = q.x2 - q.x1, dy = q.y2 - q.y1, L2 = dx * dx + dy * dy || 1;
+        const t = Math.max(0, Math.min(1, ((pt[0] - q.x1) * dx + (pt[1] - q.y1) * dy) / L2));
+        return [q.x1 + t * dx, q.y1 + t * dy];
+      }
+    }
+    return pt;
+  }
 
   function el(tag, attrs, text) {
     const n = document.createElementNS(SVGNS, tag);
@@ -352,6 +627,7 @@
     if (text != null) n.textContent = text;
     return n;
   }
+  const ptsAttr = (pts) => pts.map(([x, y]) => `${x},${y}`).join(" ");
 
   function renderCanvas() {
     const [W, H] = area();
@@ -371,33 +647,69 @@
     for (let y = 12; y <= H; y += 12) svg.append(el("text", { x: -fs * 0.5, y: y + fs * 0.3, "font-size": fs * 0.8, "text-anchor": "end", class: "grid-label" }, `${y / 12}′`));
 
     const pieces = viewPieces();
-    const labels = [];
-    for (const p of pieces.filter((q) => q.kind === "panel")) {
-      const cls = `panel${p.qty ? "" : " ref"}${p.id === selectedId ? " sel" : ""}`;
-      svg.append(el("rect", { x: p.x, y: p.y, width: p.w, height: p.h, class: cls, "stroke-width": M / 300 }));
-      svg.append(el("rect", { x: p.x, y: p.y, width: p.w, height: p.h, class: "hit", "data-id": p.id }));
-      labels.push({ x: p.x + p.w / 2, y: p.y + p.h / 2 + fs * 0.35, text: `${inchFrac(p.w)} × ${inchFrac(p.h)}${p.qty > 1 ? ` ×${p.qty}` : p.qty ? "" : " ref"}`, sel: p.id === selectedId });
+    // your strokes, faint, under the pieces they were read as
+    if (S().showInk) {
+      const inks = new Set();
+      for (const p of pieces) if (p.ink && !inks.has(p.group)) {
+        inks.add(p.group);
+        svg.append(el("polyline", { points: ptsAttr(p.ink), class: "ink", "stroke-width": M / 220 }));
+      }
     }
-    for (const p of pieces.filter((q) => q.kind === "board")) {
+    const labels = [];
+    const label = (p, x, y, anchor) => {
+      const s = size(p);
+      const qty = p.qty > 1 ? ` ×${p.qty}` : p.qty ? "" : " ref";
+      const text = p.dimText ? p.dimText + qty : (s.len != null ? `${s.approx ? "≈" : ""}${inchFrac(s.len)}` : `${s.approx ? "≈" : ""}${inchFrac(s.w)} × ${inchFrac(s.h)}`) + qty;
+      labels.push({ x, y, anchor, text, typed: !!p.dimText, approx: !p.dimText && s.approx, sel: p.id === selectedId });
+    };
+    const cls = (base, p) => `${base}${p.qty ? "" : " ref"}${p.id === selectedId ? " sel" : ""}`;
+    for (const p of pieces.filter((q) => q.kind === "panel" || q.kind === "shape")) {
+      const sw = M / 300;
+      if (p.kind === "panel") {
+        svg.append(el("rect", { x: p.x, y: p.y, width: p.w, height: p.h, class: cls("panel", p), "stroke-width": sw }));
+        svg.append(el("rect", { x: p.x, y: p.y, width: p.w, height: p.h, class: "hit", "data-id": p.id }));
+        label(p, p.x + p.w / 2, p.y + p.h / 2 + fs * 0.35, "middle");
+      } else if (p.circle) {
+        const c = p.circle;
+        svg.append(el("circle", { cx: c.cx, cy: c.cy, r: c.r, class: cls("panel", p), "stroke-width": sw }));
+        svg.append(el("circle", { cx: c.cx, cy: c.cy, r: c.r, class: "hit", "data-id": p.id }));
+        label(p, c.cx, c.cy + fs * 0.35, "middle");
+      } else {
+        svg.append(el("polygon", { points: ptsAttr(p.pts), class: cls("panel", p), "stroke-width": sw }));
+        svg.append(el("polygon", { points: ptsAttr(p.pts), class: "hit", "data-id": p.id }));
+        const b = bbox(p.pts);
+        label(p, b.x + b.w / 2, b.y + b.h / 2 + fs * 0.35, "middle");
+      }
+    }
+    for (const p of pieces.filter((q) => q.kind === "board" || q.kind === "curve")) {
       const prof = PROFILES[p.profile];
-      const cls = `piece${p.qty ? "" : " ref"}${p.id === selectedId ? " sel" : ""}`;
-      const attrs = { x1: p.x1, y1: p.y1, x2: p.x2, y2: p.y2, class: cls, "stroke-width": Math.max(prof.t, M / 160) };
-      if (!p.qty) attrs["stroke-dasharray"] = `${M / 60} ${M / 120}`;
-      svg.append(el("line", attrs));
-      svg.append(el("line", { x1: p.x1, y1: p.y1, x2: p.x2, y2: p.y2, class: "hit", "stroke-width": Math.max(prof.t, M / 25), "data-id": p.id }));
-      const len = boardLen(p);
-      const nx = -(p.y2 - p.y1) / (len || 1), ny = (p.x2 - p.x1) / (len || 1);
+      const w = Math.max(prof.t, M / 160);
+      const dash = p.qty ? {} : { "stroke-dasharray": `${M / 60} ${M / 120}` };
+      let a, b, mid;
+      if (p.kind === "board") {
+        svg.append(el("line", { x1: p.x1, y1: p.y1, x2: p.x2, y2: p.y2, class: cls("piece", p), "stroke-width": w, ...dash }));
+        svg.append(el("line", { x1: p.x1, y1: p.y1, x2: p.x2, y2: p.y2, class: "hit", "stroke-width": Math.max(prof.t, M / 25), "data-id": p.id }));
+        a = [p.x1, p.y1]; b = [p.x2, p.y2]; mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      } else {
+        svg.append(el("polyline", { points: ptsAttr(p.pts), class: cls("piece curve", p), "stroke-width": w, ...dash }));
+        svg.append(el("polyline", { points: ptsAttr(p.pts), class: "hit", "stroke-width": Math.max(prof.t, M / 25), "data-id": p.id }));
+        a = p.pts[0]; b = p.pts[p.pts.length - 1]; mid = p.pts[Math.floor(p.pts.length / 2)];
+      }
+      const len = dist(a, b) || 1;
+      const nx = -(b[1] - a[1]) / len, ny = (b[0] - a[0]) / len;
       // upright pieces get their label beside them, flat ones above or below
       const upright = Math.abs(nx) > 0.7;
       const off = prof.t / 2 + fs * (upright ? 0.5 : 0.9);
-      labels.push({ x: (p.x1 + p.x2) / 2 + nx * off, y: (p.y1 + p.y2) / 2 + ny * off + fs * 0.35,
-        anchor: upright ? (nx < 0 ? "end" : "start") : "middle",
-        text: `${inchFrac(len)}${p.qty > 1 ? ` ×${p.qty}` : p.qty ? "" : " ref"}`, sel: p.id === selectedId });
+      label(p, mid[0] + nx * off, mid[1] + ny * off + fs * 0.35, upright ? (nx < 0 ? "end" : "start") : "middle");
     }
     for (const l of labels) {
-      svg.append(el("text", { x: l.x, y: l.y, "font-size": fs, "text-anchor": l.anchor || "middle", class: `dim${l.sel ? " sel" : ""}`, "stroke-width": fs / 4, "pointer-events": "none" }, l.text));
+      svg.append(el("text", {
+        x: l.x, y: l.y, "font-size": l.typed ? fs * 1.35 : fs, "text-anchor": l.anchor,
+        class: `dim${l.typed ? " typed" : ""}${l.approx ? " approx" : ""}${l.sel ? " sel" : ""}`, "stroke-width": fs / 4, "pointer-events": "none",
+      }, l.text));
     }
     // drawing preview
+    if (stroke) svg.append(el("polyline", { points: ptsAttr(stroke.pts), class: "preview-ink", "stroke-width": M / 160 }));
     if (drag && drag.cur) {
       const a = drag.start, b = drag.cur;
       if (S().tool === "board") {
@@ -413,17 +725,22 @@
     if (snapPoint && drag) svg.append(el("circle", { cx: snapPoint.x, cy: snapPoint.y, r: M / 90, class: "snap-dot", "fill-opacity": 0.5 }));
 
     const counted = pieces.filter((p) => p.qty > 0).length;
+    const k = viewScale(S().view);
+    $("scaleNote").textContent = Math.abs(k - 1) > 1e-6
+      ? `Sizes without a typed number are scaled from the ones you typed (drawing × ${num(k, 2)}).`
+      : pieces.some((p) => p.free && !p.dim) ? "Tap a piece to type its real size. Untyped pieces use the grid and show ≈." : "";
     $("canvasLabel").textContent = `${VIEWS[S().view]} view sketch, ${W / 12} by ${H / 12} feet, with ${pieces.length} piece${pieces.length === 1 ? "" : "s"} (${counted} counted). The piece list below describes every piece.`;
   }
 
-  function addPiece(piece) {
+  function addPieces(list, announceText) {
     snapshot();
-    project.pieces.push(piece);
-    selectedId = piece.id;
+    project.pieces.push(...list);
+    selectedId = list[list.length - 1].id;
     changed();
     renderEditor();
-    announce(`Added ${pieceLabel(piece)}, ${pieceSize(piece)}${piece.view !== S().view ? `, in the ${piece.view} view` : ""}`);
+    announce(announceText || `Added ${pieceLabel(list[0])}, ${pieceSize(list[0])}${list[0].view !== S().view ? `, in the ${list[0].view} view` : ""}`);
   }
+  const addPiece = (p) => addPieces([p]);
 
   function finishDrawing(a, b) {
     if (S().tool === "board") {
@@ -436,14 +753,49 @@
     }
   }
 
+  // Builds pieces from a recognized stroke. Boards and curves get the board size; closed shapes the sheet.
+  function piecesFromInk(ink, mode, base) {
+    const { readAs, pieces } = interpret(ink, mode);
+    const group = base.group || newId();
+    const skip = new Set(base.skip || []);
+    const out = pieces.map((g) => {
+      const p = { id: newId(), view: base.view, qty: base.qty ?? 1, name: "", free: true, group, readAs, ink, ...g };
+      if (p.kind === "board" || p.kind === "curve") p.profile = base.profile; else p.sheet = base.sheet;
+      return p;
+    });
+    // join the stroke's two loose ends to the pieces already there; its own corners stay shared
+    const first = out[0], last = out[out.length - 1];
+    if (first && first.kind === "board") {
+      const closedFrame = out.length > 2 && first.x1 === last.x2 && first.y1 === last.y2;
+      if (!closedFrame) {
+        [first.x1, first.y1] = snapEnd([first.x1, first.y1], skip);
+        [last.x2, last.y2] = snapEnd([last.x2, last.y2], skip);
+      }
+    } else if (first && first.kind === "curve") {
+      first.pts[0] = snapEnd(first.pts[0], skip);
+      first.pts[first.pts.length - 1] = snapEnd(first.pts[first.pts.length - 1], skip);
+    }
+    return { readAs, pieces: out };
+  }
+
+  // ---------- pointer input ----------
+  let stroke = null;   // freehand: { pts, hitId }
   svg.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
-    if (S().tool === "select") {
+    closeSizePop(false);
+    const tool = S().tool;
+    if (tool === "select") {
       const id = e.target.closest("[data-id]")?.dataset.id || null;
       select(id);
       return;
     }
     e.preventDefault();
+    svg.setPointerCapture?.(e.pointerId);
+    if (tool === "draw") {
+      const p = toInches(e);
+      stroke = { pts: [[p.x, p.y]], hitId: e.target.closest("[data-id]")?.dataset.id || null };
+      return;
+    }
     const p = snap(toInches(e));
     if (drag && drag.mode === "click") {        // second tap of a tap-tap line
       const start = drag.start;
@@ -452,10 +804,19 @@
       return;
     }
     drag = { start: p, cur: p, mode: "drag", moved: false };
-    svg.setPointerCapture?.(e.pointerId);
     renderCanvas();
   });
   svg.addEventListener("pointermove", (e) => {
+    if (stroke) {
+      const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+      for (const ev of evs.length ? evs : [e]) {
+        const p = toInches(ev);
+        const last = stroke.pts[stroke.pts.length - 1];
+        if (Math.hypot(p.x - last[0], p.y - last[1]) > 0.12) stroke.pts.push([p.x, p.y]);
+      }
+      renderCanvas();
+      return;
+    }
     if (!drag) return;
     const p = snap(toInches(e));
     if (p.x !== drag.cur.x || p.y !== drag.cur.y) {
@@ -465,6 +826,21 @@
     }
   });
   svg.addEventListener("pointerup", (e) => {
+    if (stroke) {
+      const s = stroke;
+      stroke = null;
+      if (pathLen(s.pts) < 0.8) {             // a tap: type the size of the piece under it
+        renderCanvas();
+        if (s.hitId) { select(s.hitId); openSizePop(s.hitId, e.clientX, e.clientY); }
+        else announce("Draw a stroke, or tap a piece to type its size.");
+        return;
+      }
+      const ink = round2(rdp(s.pts, 0.08));
+      const { readAs, pieces } = piecesFromInk(ink, "auto", { view: S().view, profile: S().profile, sheet: S().sheet });
+      if (!pieces.length) { renderCanvas(); return; }
+      addPieces(pieces, `Read as ${READ_AS[readAs].toLowerCase()}${pieces.length > 1 ? `, ${pieces.length} pieces` : ""}: ${pieces.map(pieceSize).join(", ")}. Tap it to type a size.`);
+      return;
+    }
     if (!drag || drag.mode !== "drag") return;
     const p = snap(toInches(e));
     if (!drag.moved && p.x === drag.start.x && p.y === drag.start.y) {
@@ -477,12 +853,21 @@
     snapPoint = null;
     finishDrawing(start, p);
   });
-  svg.addEventListener("pointercancel", () => { drag = null; snapPoint = null; renderCanvas(); });
+  svg.addEventListener("pointercancel", () => { drag = null; stroke = null; snapPoint = null; renderCanvas(); });
+
+  function movePiece(p, dx, dy) {
+    const mv = (pts) => pts && pts.forEach((q) => { q[0] += dx; q[1] += dy; });
+    if (p.kind === "board") { p.x1 += dx; p.x2 += dx; p.y1 += dy; p.y2 += dy; }
+    else if (p.kind === "panel") { p.x += dx; p.y += dy; }
+    else if (p.circle) { p.circle.cx += dx; p.circle.cy += dy; }
+    else mv(p.pts);
+    if (p.ink && !project.pieces.some((q) => q !== p && q.group === p.group)) mv(p.ink);
+  }
 
   // keyboard on the focused sketch (shortcuts only act while the sketch has focus)
   svg.addEventListener("keydown", (e) => {
     const list = viewPieces();
-    if (e.key === "Escape") { drag = null; snapPoint = null; select(null); return; }
+    if (e.key === "Escape") { drag = null; stroke = null; snapPoint = null; select(null); return; }
     if (e.key === "[" || e.key === "]") {
       e.preventDefault();
       if (!list.length) return;
@@ -495,15 +880,61 @@
     }
     const p = byId(selectedId);
     if (!p || p.view !== S().view) return;
+    if (e.key === "Enter") { e.preventDefault(); const r = svg.getBoundingClientRect(); openSizePop(p.id, r.left + r.width / 2, r.top + r.height / 2); return; }
     if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); removePiece(p.id); return; }
     const step = (+S().grid) * (e.shiftKey ? 12 : 1);
     const mv = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
     if (!mv) return;
     e.preventDefault();
     snapshot();
-    if (p.kind === "board") { p.x1 += mv[0]; p.x2 += mv[0]; p.y1 += mv[1]; p.y2 += mv[1]; } else { p.x += mv[0]; p.y += mv[1]; }
+    movePiece(p, mv[0], mv[1]);
     changed();
   });
+
+  // ---------- tap-and-type size ----------
+  const pop = $("sizePop");
+  let popId = null;
+  function openSizePop(id, clientX, clientY) {
+    const p = byId(id);
+    if (!p) return;
+    popId = id;
+    const wrap = svg.parentElement.getBoundingClientRect();
+    const s = size(p);
+    $("sizePopLabel").textContent = `Size of this ${linear(p) ? (p.kind === "curve" ? "curved piece (length)" : p.profile) : p.circle ? "circle (across)" : "sheet piece (width × height)"}`;
+    $("sizeInput").value = p.dimText || "";
+    $("sizeInput").placeholder = linear(p) ? `${inchFrac(s.len)} or 2' 10"` : p.circle ? inchFrac(s.w) : `${inchFrac(s.w)} x ${inchFrac(s.h)}`;
+    $("sizeHint").textContent = p.dimText ? "" : `Drawn as about ${pieceSize(p).replace("≈ ", "")}.`;
+    $("sizeInput").removeAttribute("aria-invalid");
+    pop.hidden = false;
+    const pw = pop.offsetWidth, ph = pop.offsetHeight;
+    const x = Math.max(8, Math.min(wrap.width - pw - 8, clientX - wrap.left - pw / 2));
+    const y = clientY - wrap.top + 16 + ph > wrap.height ? Math.max(8, clientY - wrap.top - ph - 16) : clientY - wrap.top + 16;
+    pop.style.left = `${x}px`;
+    pop.style.top = `${y}px`;
+    $("sizeInput").focus();
+    $("sizeInput").select();
+  }
+  function closeSizePop(refocus = true) {
+    if (pop.hidden) return;
+    pop.hidden = true;
+    popId = null;
+    if (refocus) svg.focus();
+  }
+  pop.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const p = byId(popId);
+    if (!p) return closeSizePop();
+    snapshot();
+    const err = applySize(p, $("sizeInput").value);
+    if (err) { undoStack.pop(); $("sizeHint").textContent = err; $("sizeInput").setAttribute("aria-invalid", "true"); return; }
+    changed();
+    renderEditor();
+    announce(p.dim ? `${p.name || pieceLabel(p)} is ${pieceSize(p)}` : "Using the drawing for this size");
+    closeSizePop();
+  });
+  $("sizeClear").addEventListener("click", () => { $("sizeInput").value = ""; pop.requestSubmit(); });
+  $("sizeClose").addEventListener("click", () => closeSizePop());
+  pop.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeSizePop(); } });
 
   // ---------- selected piece editor ----------
   function select(id) {
@@ -519,20 +950,29 @@
     const p = byId(selectedId);
     $("editor").hidden = !p;
     if (!p) return;
-    $("editorTitle").textContent = p.kind === "board" ? "Selected board" : "Selected sheet piece";
-    const matOptions = p.kind === "board"
+    $("editorTitle").textContent = linear(p) ? (p.kind === "curve" ? "Selected curved piece" : "Selected board") : "Selected sheet piece";
+    const matOptions = linear(p)
       ? Object.keys(PROFILES).map((k) => `<option value="${k}" ${k === p.profile ? "selected" : ""}>${k}</option>`).join("")
       : Object.entries(SHEETS).map(([k, s]) => `<option value="${k}" ${k === p.sheet ? "selected" : ""}>${s.name}</option>`).join("");
-    const size = p.kind === "board"
-      ? `<div class="opt"><label for="edLen">Length (in)</label><input id="edLen" type="text" inputmode="decimal" autocomplete="off" value="${esc(inchFrac(boardLen(p)).replace("″", ""))}"></div>`
-      : `<div class="opt"><label for="edW">Width (in)</label><input id="edW" type="text" inputmode="decimal" autocomplete="off" value="${esc(inchFrac(p.w).replace("″", ""))}"></div>
-         <div class="opt"><label for="edH">Height (in)</label><input id="edH" type="text" inputmode="decimal" autocomplete="off" value="${esc(inchFrac(p.h).replace("″", ""))}"></div>`;
+    const s = size(p);
+    const sizeLabel = linear(p) ? "Length" : p.circle ? "Across" : "Width × height";
+    const placeholder = linear(p) ? `≈ ${inchFrac(s.len)}` : p.circle ? `≈ ${inchFrac(s.w)}` : `≈ ${inchFrac(s.w)} x ${inchFrac(s.h)}`;
+    const readAs = p.ink
+      ? `<div class="opt"><label for="edRead">Read as</label><select id="edRead">${Object.entries(READ_AS).map(([k, v]) => `<option value="${k}" ${k === p.readAs ? "selected" : ""}>${v}</option>`).join("")}</select></div>`
+      : "";
+    const curveInfo = p.kind === "curve" ? (() => {
+      const stock = curveStock(p);
+      return `<p class="field-info">Cut from ${stock.profile ? `a ${stock.profile}` : `${SHEETS[stock.sheet].name}`}: needs ${plainIn(stock.width)} of width for the bow.</p>`;
+    })() : "";
     $("editorFields").innerHTML = `
       <div class="opt"><label for="edName">Name</label><input id="edName" type="text" autocomplete="off" value="${esc(p.name || "")}" placeholder="e.g. Front leg"></div>
-      <div class="opt"><label for="edMat">Material</label><select id="edMat">${matOptions}</select></div>
-      ${size}
+      ${readAs}
+      <div class="opt"><label for="edMat">${linear(p) ? "Board" : "Sheet"}</label><select id="edMat">${matOptions}</select></div>
+      <div class="opt"><label for="edSize">${sizeLabel} (typed)</label><input id="edSize" type="text" autocomplete="off" value="${esc(p.dimText || "")}" placeholder="${esc(placeholder)}" aria-describedby="edSizeHelp"></div>
       <div class="opt"><label for="edQty">Qty (0 = reference)</label><input id="edQty" type="number" min="0" max="999" step="1" value="${p.qty}"></div>
-      <button type="button" class="del-btn" id="edDelete">Delete piece</button>`;
+      <button type="button" class="del-btn" id="edDelete">Delete piece</button>
+      <p class="field-info" id="edSizeHelp">Leave the size empty to use the drawing (${esc(pieceSize(p))}). Feet and inches, fractions and mm or cm all work.</p>
+      ${curveInfo}`;
   }
 
   $("editorFields").addEventListener("change", (e) => {
@@ -541,23 +981,32 @@
     const t = e.target;
     snapshot();
     if (t.id === "edName") p.name = t.value.trim().slice(0, 60);
-    if (t.id === "edMat") { if (p.kind === "board") p.profile = t.value; else p.sheet = t.value; }
+    if (t.id === "edMat") { if (linear(p)) p.profile = t.value; else p.sheet = t.value; }
     if (t.id === "edQty") p.qty = Math.max(0, Math.min(999, Math.round(+t.value || 0)));
-    if (t.id === "edLen") {
-      const L = parseQty(t.value);
-      if (!(L > 0)) { t.setAttribute("aria-invalid", "true"); announce("Enter a length like 17 1/2"); undoStack.pop(); return; }
-      t.removeAttribute("aria-invalid");
-      const cur = boardLen(p) || 1;
-      const ux = (p.x2 - p.x1) / cur || 1, uy = (p.y2 - p.y1) / cur || 0;
-      p.x2 = p.x1 + ux * L; p.y2 = p.y1 + uy * L;
+    if (t.id === "edSize") {
+      const err = applySize(p, t.value);
+      if (err) { undoStack.pop(); t.setAttribute("aria-invalid", "true"); $("edSizeHelp").textContent = err; announce(err); return; }
     }
-    if (t.id === "edW" || t.id === "edH") {
-      const v = parseQty(t.value);
-      if (!(v > 0)) { t.setAttribute("aria-invalid", "true"); announce("Enter a size like 15 1/2"); undoStack.pop(); return; }
-      t.removeAttribute("aria-invalid");
-      if (t.id === "edW") p.w = v; else p.h = v;
+    if (t.id === "edRead") {
+      // read the same stroke again as something else; the whole stroke's pieces are replaced
+      const group = project.pieces.filter((q) => q.group === p.group);
+      const { pieces } = piecesFromInk(p.ink, t.value, {
+        view: p.view, qty: p.qty, group: p.group, skip: group.map((q) => q.id),
+        profile: linear(p) ? p.profile : S().profile, sheet: linear(p) ? S().sheet : p.sheet,
+      });
+      if (!pieces.length) { undoStack.pop(); return; }
+      const at = project.pieces.indexOf(group[0]);
+      project.pieces = project.pieces.filter((q) => q.group !== p.group);
+      project.pieces.splice(Math.max(0, at), 0, ...pieces);
+      selectedId = pieces[0].id;
+      changed();
+      renderEditor();
+      $("edRead")?.focus();
+      announce(`Now read as ${READ_AS[t.value].toLowerCase()}: ${pieces.map(pieceSize).join(", ")}`);
+      return;
     }
     changed();
+    if (t.id === "edSize" || t.id === "edMat") { renderEditor(); $(t.id)?.focus(); }
   });
   $("editorFields").addEventListener("click", (e) => { if (e.target.id === "edDelete") removePiece(selectedId); });
 
@@ -615,18 +1064,18 @@
     const qty = Math.max(0, Math.min(999, Math.round(+$("addQty").value || 0)));
     const view = $("addView").value;
     const [W, H] = area();
-    const used = project.pieces.filter((p) => p.view === view).map((p) => (p.kind === "board" ? Math.max(p.y1, p.y2) : p.y + p.h));
+    const used = project.pieces.filter((p) => p.view === view).flatMap(piecePoints).map((pt) => pt[1]);
     const y = Math.min(H - 1, (used.length ? Math.max(...used) : 0) + 3);
     $("addErr").textContent = "";
     if (kind === "board") {
-      const L = parseQty($("addLen").value);
+      const L = parseLength($("addLen").value);
       if (!(L > 0)) { $("addErr").textContent = "Enter a length like 24 or 17 1/2."; $("addLen").focus(); return; }
       if (L > W) S().area = L > 96 ? "192x96" : "96x96";
-      addPiece({ id: newId(), kind, view, profile: $("addMat").value, x1: 2, y1: y, x2: 2 + L, y2: y, qty, name: "" });
+      addPiece({ id: newId(), kind, view, profile: $("addMat").value, x1: 2, y1: y, x2: 2 + L, y2: y, qty, name: "", dim: { len: L }, dimText: $("addLen").value.trim() });
     } else {
-      const w = parseQty($("addW").value), h = parseQty($("addH").value);
+      const w = parseLength($("addW").value), h = parseLength($("addH").value);
       if (!(w > 0) || !(h > 0)) { $("addErr").textContent = "Enter a width and height like 16 or 15 1/2."; return; }
-      addPiece({ id: newId(), kind, view, sheet: $("addMat").value, x: 2, y: Math.min(y, Math.max(0, H - h)), w, h, qty, name: "" });
+      addPiece({ id: newId(), kind, view, sheet: $("addMat").value, x: 2, y: Math.min(y, Math.max(0, H - h)), w, h, qty, name: "", dim: { w, h }, dimText: `${$("addW").value.trim()} x ${$("addH").value.trim()}` });
     }
     renderControls();
   });
@@ -703,7 +1152,7 @@
       ${bars ? `<div class="plan"><div class="primary-label">Cut plan</div>${bars}</div>` : ""}
       ${sheetPlans ? `<div class="plan"><div class="primary-label">Sheet layout</div><div class="sheet-plans">${sheetPlans}</div></div>` : ""}
       <div class="result-foot">
-        <p class="note">Stock sizes common at Home Depot and Lowe's; lengths vary by store. Allows ${plainIn(KERF)} per saw cut. Screw counts assume ${S().fastener === "pocket" ? "pocket-hole joints" : "screwed butt joints"} wherever pieces meet.</p>
+        <p class="note">Stock sizes common at Home Depot and Lowe's; lengths vary by store. Allows ${plainIn(KERF)} per saw cut. Screw counts assume ${S().fastener === "pocket" ? "pocket-hole joints" : "screwed butt joints"} wherever pieces meet.${r.approx ? " Some sizes are estimated from the drawing (≈); type the real sizes for an exact list." : ""}</p>
         <button type="button" class="copy-btn" id="copyList">Copy list</button>
       </div>`;
     lastText = "Shopping list\n" + lines.join("\n");
@@ -730,11 +1179,12 @@
   }
   function renderControls() {
     renderViews();
-    document.querySelectorAll("[data-tool]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.tool === S().tool ? "true" : "false"));
+    document.querySelectorAll(".tool-toggle[data-tool]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.tool === S().tool ? "true" : "false"));
     $("newProfile").innerHTML = Object.entries(PROFILES).map(([k, p]) => `<option value="${k}" ${k === S().profile ? "selected" : ""}>${k} (${plainIn(p.t)} × ${plainIn(p.w)})</option>`).join("");
     $("newSheet").innerHTML = Object.entries(SHEETS).map(([k, s]) => `<option value="${k}" ${k === S().sheet ? "selected" : ""}>${s.name}</option>`).join("");
     $("areaSel").value = S().area;
     $("gridSel").value = String(S().grid);
+    $("showInk").checked = S().showInk;
     document.querySelectorAll('input[name="fastener"]').forEach((r) => { r.checked = r.value === S().fastener; });
   }
 
@@ -775,7 +1225,7 @@
     views[n].click();
     views[n].focus();
   });
-  document.querySelectorAll("[data-tool]").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll(".tool-toggle[data-tool]").forEach((b) => b.addEventListener("click", () => {
     S().tool = b.dataset.tool;
     drag = null;
     renderControls();
@@ -785,6 +1235,7 @@
   $("newSheet").addEventListener("change", (e) => { S().sheet = e.target.value; save(); fillAddMaterials(); });
   $("areaSel").addEventListener("change", (e) => { S().area = e.target.value; changed(); });
   $("gridSel").addEventListener("change", (e) => { S().grid = +e.target.value; save(); });
+  $("showInk").addEventListener("change", (e) => { S().showInk = e.target.checked; changed(); });
 
   $("undoBtn").addEventListener("click", () => {
     const prev = undoStack.pop();

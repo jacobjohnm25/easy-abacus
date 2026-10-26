@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="../icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Caveat:wght@600;700&display=swap">
 <link rel="stylesheet" href="../../shared/theme.css">
 <link rel="stylesheet" href="../styles.css">
 <link rel="stylesheet" href="estimator.css">
@@ -70,11 +70,14 @@
           <button type="button" role="tab" id="view-top" data-view="top" aria-controls="canvas">Top</button>
         </div>
         <div class="tools-row" role="group" aria-label="Drawing tool">
-          <button type="button" class="tool-toggle" data-tool="board" aria-pressed="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 20L20 4"/></svg>Board
+          <button type="button" class="tool-toggle" data-tool="draw" aria-pressed="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17c3-6 5 2 8-3s4-7 7-4 2 6 3 5"/></svg>Draw
+          </button>
+          <button type="button" class="tool-toggle" data-tool="board" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 20L20 4"/></svg>Line
           </button>
           <button type="button" class="tool-toggle" data-tool="panel" aria-pressed="false">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>Sheet
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>Rectangle
           </button>
           <button type="button" class="tool-toggle" data-tool="select" aria-pressed="false">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M5 3l14 8-6 2-2 6z"/></svg>Select
@@ -99,6 +102,9 @@
             <option value="192x96">16 × 8 ft</option>
           </select>
         </div>
+        <div class="opt opt-check">
+          <label class="check-row" for="showInk"><input type="checkbox" id="showInk"> Show my strokes</label>
+        </div>
         <div class="opt">
           <label for="gridSel">Snap to</label>
           <select id="gridSel">
@@ -112,8 +118,21 @@
       <div class="canvas-wrap">
         <svg id="canvas" class="canvas" tabindex="0" role="img" aria-labelledby="canvasLabel" aria-describedby="canvasHelp"></svg>
         <p class="sr-only" id="canvasLabel"></p>
+        <form class="size-pop" id="sizePop" role="dialog" aria-labelledby="sizePopLabel" novalidate hidden>
+          <label id="sizePopLabel" for="sizeInput">Size of this piece</label>
+          <div class="size-row">
+            <input id="sizeInput" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" aria-describedby="sizeHint">
+            <button type="submit" class="copy-btn">Set</button>
+          </div>
+          <p class="size-hint" id="sizeHint" aria-live="polite"></p>
+          <div class="size-actions">
+            <button type="button" class="text-btn" id="sizeClear">Use the drawing</button>
+            <button type="button" class="text-btn" id="sizeClose">Close</button>
+          </div>
+        </form>
       </div>
-      <p class="help" id="canvasHelp">Drag, or tap two points, to draw a board. Each line is one piece of wood; lengths snap to the grid and to the ends of other pieces. Draw sheets as rectangles. With the sketch focused: arrow keys move the selected piece, <kbd>[</kbd> and <kbd>]</kbd> pick the previous or next piece, <kbd>Delete</kbd> removes it.</p>
+      <p class="scale-note" id="scaleNote" aria-live="polite"></p>
+      <p class="help" id="canvasHelp"><strong>Draw</strong> anything freehand: a straight stroke becomes a board, an L or zig-zag becomes joined boards, a smooth curve becomes a curved piece, and a closed shape (box, circle or any outline) becomes a sheet piece. Then <strong>tap a piece and type its real size</strong>, like <kbd>34</kbd>, <kbd>2' 10"</kbd> or <kbd>16 x 24</kbd>; pieces you haven't sized are scaled from the ones you have. <strong>Line</strong> and <strong>Rectangle</strong> draw exact, grid-snapped pieces (drag or tap two points). With the sketch focused: <kbd>[</kbd> and <kbd>]</kbd> pick a piece, <kbd>Enter</kbd> types its size, arrow keys move it, <kbd>Delete</kbd> removes it.</p>
 
       <div class="editor" id="editor" hidden>
         <h3 class="sec-title" id="editorTitle">Selected piece</h3>
@@ -145,9 +164,9 @@
         <div class="opt"><label for="addKind">Type</label>
           <select id="addKind"><option value="board">Board</option><option value="panel">Sheet</option></select></div>
         <div class="opt"><label for="addMat">Material</label><select id="addMat"></select></div>
-        <div class="opt" data-for="board"><label for="addLen">Length (in)</label><input id="addLen" type="text" inputmode="decimal" autocomplete="off" value="24"></div>
-        <div class="opt" data-for="panel" hidden><label for="addW">Width (in)</label><input id="addW" type="text" inputmode="decimal" autocomplete="off" value="16"></div>
-        <div class="opt" data-for="panel" hidden><label for="addH">Height (in)</label><input id="addH" type="text" inputmode="decimal" autocomplete="off" value="16"></div>
+        <div class="opt" data-for="board"><label for="addLen">Length</label><input id="addLen" type="text" inputmode="decimal" autocomplete="off" value="24"></div>
+        <div class="opt" data-for="panel" hidden><label for="addW">Width</label><input id="addW" type="text" inputmode="decimal" autocomplete="off" value="16"></div>
+        <div class="opt" data-for="panel" hidden><label for="addH">Height</label><input id="addH" type="text" inputmode="decimal" autocomplete="off" value="16"></div>
         <div class="opt"><label for="addQty">Qty</label><input id="addQty" type="number" min="0" max="999" step="1" value="1"></div>
         <div class="opt"><label for="addView">View</label>
           <select id="addView"><option value="front">Front</option><option value="side">Side</option><option value="top">Top</option></select></div>

@@ -1,5 +1,5 @@
 // Offline support: the app shell is cached on install; Google Fonts are cached the first time they load.
-const VERSION = "v4";
+const VERSION = "v5";
 const PREFIX = "jobsite-";
 const SHELL = `${PREFIX}shell-${VERSION}`;
 const FONTS = `${PREFIX}fonts-${VERSION}`;
