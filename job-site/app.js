@@ -53,6 +53,7 @@
     wire: '<path d="M5 19c0-7 14-7 14-14"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/>',
     breaker: '<rect x="6" y="3" width="12" height="18" rx="2"/><path d="M12 7v6"/><circle cx="12" cy="16.5" r="1"/>',
     meter: '<circle cx="12" cy="13" r="8"/><path d="M12 13l4-4M12 3v2"/>',
+    sketch: '<path d="M4 20l4-1L19 8l-3-3L5 16z"/><path d="M14 7l3 3"/><path d="M4 4h6M4 4v6"/>',
   };
   const icon = (k) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k]}</svg>`;
 
@@ -695,16 +696,27 @@
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+  // Separate pages listed with the calculators
+  const ESTIMATOR_URL = document.querySelector('meta[name="estimator-url"]')?.content || "estimator/";
+  const NAV_LINKS = [{ trade: "Woodwork", name: "Material estimator", icon: "sketch", href: ESTIMATOR_URL, after: "boardfeet" }];
+
   function renderNav() {
     const groups = [];
+    const entries = [];
     for (const t of TOOLS) {
+      entries.push(t);
+      for (const l of NAV_LINKS) if (l.after === t.id) entries.push(l);
+    }
+    for (const t of entries) {
       let g = groups.find((x) => x.trade === t.trade);
       if (!g) groups.push(g = { trade: t.trade, tools: [] });
       g.tools.push(t);
     }
     $("toolNav").innerHTML = groups.map((g) => `
       <div><h2>${g.trade}</h2><ul>${g.tools.map((t) => `
-        <li><button type="button" class="tool-btn" data-tool="${t.id}" ${t.id === state.tool ? 'aria-current="page"' : ""}>${icon(t.icon)}${t.name}</button></li>`).join("")}
+        <li>${t.href
+          ? `<a class="tool-btn tool-link" href="${t.href}">${icon(t.icon)}${t.name}<span class="sr-only"> (opens the sketch page)</span></a>`
+          : `<button type="button" class="tool-btn" data-tool="${t.id}" ${t.id === state.tool ? 'aria-current="page"' : ""}>${icon(t.icon)}${t.name}</button>`}</li>`).join("")}
       </ul></div>`).join("");
   }
 

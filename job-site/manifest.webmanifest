@@ -18,6 +18,7 @@
   ],
   "shortcuts": [
     { "name": "Concrete", "url": "./#concrete" },
+    { "name": "Material estimator", "url": "./estimator/" },
     { "name": "Stairs", "url": "./#stairs" },
     { "name": "Voltage drop", "url": "./#vdrop" },
     { "name": "Unit converter", "url": "./#convert" }

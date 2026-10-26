@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Material Estimator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Sketch a project and get the lumber, plywood and screws to buy in standard Home Depot and Lowe's sizes, with a cut plan.">
+<meta name="theme-color" content="#e8eaec">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Job Site">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../../shared/theme.css">
+<link rel="stylesheet" href="../styles.css">
+<link rel="stylesheet" href="estimator.css">
+<script src="../../shared/storage.js"></script>
+<script src="../../shared/theme.js"></script>
+<script src="../theme-config.js"></script>
+<script src="estimator.js" defer></script>
+</head>
+<body>
+<div class="app est">
+  <header class="top">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">JS</div>
+      <div>
+        <h1>Material Estimator</h1>
+        <p><a class="back-link" href="../" id="backLink">Job Site Calculator</a> · Sketch it, get the shopping list</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button type="button" class="install-btn" id="installBtn" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+        Install app
+      </button>
+      <button type="button" class="install-btn" id="openSettings" aria-haspopup="dialog">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.8 1.8-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-1 .8-1.8 1.8-1.8H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8z"/><circle cx="7.5" cy="11.5" r="1.2"/><circle cx="10.5" cy="7.5" r="1.2"/><circle cx="15" cy="8" r="1.2"/></svg>
+        Theme
+      </button>
+    </div>
+  </header>
+
+  <main class="est-main">
+  <div class="est-layout">
+    <section class="drawing" aria-labelledby="drawTitle">
+      <div class="draw-head">
+        <h2 id="drawTitle" class="sec-title">Sketch</h2>
+        <div class="project-actions">
+          <button type="button" class="text-btn" id="undoBtn">Undo</button>
+          <button type="button" class="text-btn" id="exampleBtn">Load example chair</button>
+          <button type="button" class="text-btn" id="clearBtn">Start over</button>
+        </div>
+      </div>
+      <div class="confirm-bar" id="confirmBar" role="alert" hidden>
+        <span id="confirmText"></span>
+        <button type="button" class="t-btn danger" id="confirmYes">Yes</button>
+        <button type="button" class="t-btn" id="confirmNo">Cancel</button>
+      </div>
+
+      <div class="toolbar">
+        <div class="views" role="tablist" aria-label="View">
+          <button type="button" role="tab" id="view-front" data-view="front" aria-controls="canvas">Front</button>
+          <button type="button" role="tab" id="view-side" data-view="side" aria-controls="canvas">Side</button>
+          <button type="button" role="tab" id="view-top" data-view="top" aria-controls="canvas">Top</button>
+        </div>
+        <div class="tools-row" role="group" aria-label="Drawing tool">
+          <button type="button" class="tool-toggle" data-tool="board" aria-pressed="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 20L20 4"/></svg>Board
+          </button>
+          <button type="button" class="tool-toggle" data-tool="panel" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>Sheet
+          </button>
+          <button type="button" class="tool-toggle" data-tool="select" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M5 3l14 8-6 2-2 6z"/></svg>Select
+          </button>
+        </div>
+      </div>
+      <div class="draw-options">
+        <div class="opt">
+          <label for="newProfile">New boards</label>
+          <select id="newProfile"></select>
+        </div>
+        <div class="opt">
+          <label for="newSheet">New sheets</label>
+          <select id="newSheet"></select>
+        </div>
+        <div class="opt">
+          <label for="areaSel">Drawing area</label>
+          <select id="areaSel">
+            <option value="48x48">4 × 4 ft</option>
+            <option value="96x48">8 × 4 ft</option>
+            <option value="96x96">8 × 8 ft</option>
+            <option value="192x96">16 × 8 ft</option>
+          </select>
+        </div>
+        <div class="opt">
+          <label for="gridSel">Snap to</label>
+          <select id="gridSel">
+            <option value="1">1 in</option>
+            <option value="0.5">1/2 in</option>
+            <option value="0.25">1/4 in</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="canvas-wrap">
+        <svg id="canvas" class="canvas" tabindex="0" role="img" aria-labelledby="canvasLabel" aria-describedby="canvasHelp"></svg>
+        <p class="sr-only" id="canvasLabel"></p>
+      </div>
+      <p class="help" id="canvasHelp">Drag, or tap two points, to draw a board. Each line is one piece of wood; lengths snap to the grid and to the ends of other pieces. Draw sheets as rectangles. With the sketch focused: arrow keys move the selected piece, <kbd>[</kbd> and <kbd>]</kbd> pick the previous or next piece, <kbd>Delete</kbd> removes it.</p>
+
+      <div class="editor" id="editor" hidden>
+        <h3 class="sec-title" id="editorTitle">Selected piece</h3>
+        <div class="editor-fields" id="editorFields"></div>
+      </div>
+    </section>
+
+    <section class="result est-result" aria-labelledby="buyTitle">
+      <div class="tape" aria-hidden="true"></div>
+      <div class="result-body" id="estimate"></div>
+    </section>
+  </div>
+
+  <section class="pieces" aria-labelledby="piecesTitle">
+    <div class="draw-head">
+      <h2 class="sec-title" id="piecesTitle">Pieces</h2>
+    </div>
+    <div class="table-wrap">
+      <table class="piece-table">
+        <caption class="sr-only">Every piece in the sketch</caption>
+        <thead><tr><th scope="col">View</th><th scope="col">Name</th><th scope="col">Material</th><th scope="col">Size</th><th scope="col">Qty</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody id="pieceRows"></tbody>
+      </table>
+    </div>
+
+    <form class="add-form" id="addForm" novalidate>
+      <h3 class="sec-title">Add a piece without drawing</h3>
+      <div class="add-fields">
+        <div class="opt"><label for="addKind">Type</label>
+          <select id="addKind"><option value="board">Board</option><option value="panel">Sheet</option></select></div>
+        <div class="opt"><label for="addMat">Material</label><select id="addMat"></select></div>
+        <div class="opt" data-for="board"><label for="addLen">Length (in)</label><input id="addLen" type="text" inputmode="decimal" autocomplete="off" value="24"></div>
+        <div class="opt" data-for="panel" hidden><label for="addW">Width (in)</label><input id="addW" type="text" inputmode="decimal" autocomplete="off" value="16"></div>
+        <div class="opt" data-for="panel" hidden><label for="addH">Height (in)</label><input id="addH" type="text" inputmode="decimal" autocomplete="off" value="16"></div>
+        <div class="opt"><label for="addQty">Qty</label><input id="addQty" type="number" min="0" max="999" step="1" value="1"></div>
+        <div class="opt"><label for="addView">View</label>
+          <select id="addView"><option value="front">Front</option><option value="side">Side</option><option value="top">Top</option></select></div>
+        <div class="opt opt-btn"><button type="submit" class="copy-btn">Add piece</button></div>
+      </div>
+      <p class="err" id="addErr" role="alert"></p>
+    </form>
+  </section>
+  </main>
+
+  <p class="sr-only" id="srStatus" role="status" aria-live="polite" aria-atomic="true"></p>
+  <p class="offline-note" id="offlineNote" role="status" hidden>You're offline. Everything still works.</p>
+
+  <dialog class="sheet-dialog" id="settingsDialog" aria-labelledby="settingsTitle">
+    <div class="dialog-head">
+      <div>
+        <h2 id="settingsTitle">Theme and settings</h2>
+        <p>Changes apply right away and save on this device.</p>
+      </div>
+      <button type="button" class="close-btn" id="closeSettings" aria-label="Close theme and settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="dialog-body">
+      <div id="themePanel"></div>
+      <fieldset class="t-field">
+        <legend>Joints</legend>
+        <div class="t-seg two">
+          <input type="radio" name="fastener" id="fastScrews" value="screws"><label for="fastScrews">Wood screws</label>
+          <input type="radio" name="fastener" id="fastPocket" value="pocket"><label for="fastPocket">Pocket holes</label>
+        </div>
+        <p class="t-note">How pieces are joined. Changes the screw count and lengths.</p>
+      </fieldset>
+      <div class="t-field">
+        <h3 class="t-title">Saved on this device</h3>
+        <p class="t-note">Your sketch, drawing options and the estimate. The theme is shared with the Job Site Calculator.</p>
+        <button type="button" class="t-btn danger-outline" id="resetBtn">Restore default settings</button>
+        <div class="confirm" id="resetConfirm" hidden>
+          <p>Reset mode, accent, colors and drawing options to the defaults?</p>
+          <label class="check-row" for="resetData"><input type="checkbox" id="resetData"> Also clear my sketch</label>
+          <button type="button" class="t-btn danger" id="resetYes">Restore defaults</button>
+          <button type="button" class="t-btn" id="resetNo">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+</div>
+</body>
+</html>

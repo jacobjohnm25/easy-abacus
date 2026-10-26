@@ -111,6 +111,8 @@ button, label, select { -webkit-tap-highlight-color: transparent; touch-action: 
 .tool-btn:hover { background: var(--sunk); }
 .tool-btn[aria-current="page"] { background: var(--hi); color: var(--on-hi); }
 .tool-btn svg { width: 20px; height: 20px; flex: none; }
+.tool-link { color: inherit; text-decoration: none; }
+.tool-link::after { content: "↗"; margin-left: auto; color: var(--accent); font-weight: 700; }
 
 /* ---------- worksheet ---------- */
 .sheet { display: flex; flex-direction: column; gap: 16px; min-width: 0; }

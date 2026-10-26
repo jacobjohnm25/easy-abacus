@@ -15,6 +15,6 @@ Every app in this repo, and every new one, must meet all of these without being 
 - `theme.css`: styles for the shared theme panel (uses the `--t-*` variables theme.js sets).
 
 ## Layout
-- `/` Live Tape Calculator, `/job-site/` Job Site Calculator, `/shared/` shared modules, `/scripts/` build helpers.
-- Previews for claude.ai are built with `node scripts/build-artifact.mjs [app-folder]` (strips the document wrapper and rewrites `../shared/` to `shared/`).
+- `/` Live Tape Calculator, `/job-site/` Job Site Calculator (with `/job-site/estimator/`, the Material Estimator page, served by the Job Site worker), `/shared/` shared modules, `/scripts/` build helpers.
+- Previews for claude.ai are built with `node scripts/build-artifact.mjs [app-folder]` (strips the document wrapper and flattens `../` paths). Live previews: Live Tape https://claude.ai/artifact/SNTDgecUhPhGrxkiU8NmLs, Job Site https://claude.ai/artifact/HDXj6ba6HuKZ1F9faZJJRe (build with `PREVIEW_ESTIMATOR_URL`), Estimator https://claude.ai/artifact/AQYDQcHtWrmYxNfizuhp4r (build with `PREVIEW_JOB_SITE_URL`).
 - Icons: draw `icons/icon.svg` and `icons/icon-maskable.svg`, then `node scripts/render-icons.mjs [app-folder]`.

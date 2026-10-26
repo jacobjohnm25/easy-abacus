@@ -1,11 +1,12 @@
 // Offline support: the app shell is cached on install; Google Fonts are cached the first time they load.
-const VERSION = "v3";
+const VERSION = "v4";
 const PREFIX = "jobsite-";
 const SHELL = `${PREFIX}shell-${VERSION}`;
 const FONTS = `${PREFIX}fonts-${VERSION}`;
 const ASSETS = [
   "./", "index.html", "styles.css", "app.js", "theme-config.js", "manifest.webmanifest",
   "../shared/storage.js", "../shared/theme.js", "../shared/theme.css",
+  "estimator/", "estimator/index.html", "estimator/estimator.css", "estimator/estimator.js",
   "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png",
 ];
 
@@ -43,8 +44,8 @@ self.addEventListener("fetch", (e) => {
   if (req.mode === "navigate") {
     e.respondWith(
       fetch(req)
-        .then((res) => { caches.open(SHELL).then((c) => c.put("index.html", res.clone())); return res; })
-        .catch(() => caches.match("index.html"))
+        .then((res) => { if (res.ok) caches.open(SHELL).then((c) => c.put(req, res.clone())); return res; })
+        .catch(async () => (await caches.match(req, { ignoreSearch: true })) || caches.match("index.html"))
     );
     return;
   }

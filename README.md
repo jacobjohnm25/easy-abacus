@@ -20,6 +20,7 @@ A simple calculator that shows the calculation and its result live as you type.
 
 - Concrete (slab, footing or column, with premix bags), bricks and blocks, board feet, stairs, drain pipe fall, water in a pipe, tiles and flooring, square and diagonal, unit converter
 - Electrical: Ohm's law and watts, voltage drop, wire size for a run (by voltage drop), load and breaker size, energy cost
+- **Material estimator** (`job-site/estimator/`): sketch a project as lines (boards) and rectangles (sheets) in front, side and top views; get a shopping list in standard Home Depot and Lowe's lumber lengths and sheet sizes, a cut plan that packs cuts onto boards with the least waste, and a screw and glue count from where pieces meet. The piece list and "add without drawing" form give full keyboard and screen reader access.
 - Imperial or metric; fractions like `1 1/2` work and lengths show to the nearest 1/16″
 - Each result shows how it was worked out and can be copied
 - Remembers your tool, units and measurements; links like `job-site/#stairs` open a tool directly
